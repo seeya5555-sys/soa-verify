@@ -545,8 +545,23 @@ def resolve(path, vessel, line_amt, line_cur, usd_amt=None, ident=None):
     if matches and h_real and conf >= 0.6 and basis != "none":
         return dict(status="clean", basis=basis, reason=f"LLM 배분확인 {hamt} ({basis}) conf={conf}", src=src,
                     found=hamt)
+
+
+
+    if src.startswith("ocr") and la is not None and not direct:
+        vr = vision_amount_confirm(path, vessel, line_amt, line_cur, [])
+        if vr.get("confirmed"):
+            if _high_value_vision_ident_missing(ua, vr):
+                return dict(status="flag", basis="ident",
+                            reason=f"스캔 원본 vision 금액확인 but 고액(${ua})·선박신원 미확인 — 사람확인",
+                            src="vision", found=vr.get("amount"))
+            return dict(status="clean", basis="vision-amount",
+                        reason=f"스캔 원본 vision 재판독으로 라인 {la} 직접확인: {vr.get('evidence')}",
+                        src="vision", found=vr.get("amount"))
+
+    found_txt = f"{hamt}" if h_real else (f"{hamt}(AI추정·본문없음)" if hamt is not None else "None")
     return dict(status="flag", basis=basis,
-                reason=f"라인 {la} 인보이스 미확인 (LLM matches={matches} found={hamt} basis={basis} conf={conf})",
+                reason=f"라인 {la} 인보이스 미확인 (LLM matches={matches} found={found_txt} basis={basis} conf={conf})",
                 src=src, body_top=sorted([n for n in nums if la and n >= la * 0.5])[:10])
 
 def haiku_invoice_total(txt, vessel, line_cur):
