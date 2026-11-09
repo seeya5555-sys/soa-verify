@@ -12,6 +12,8 @@ description: SVMS SOA 1단계 검증(인보이스 금액 대조)을 내 My Vesse
 2. 대상 확인: `python3 -m soa_verify owners` → 선주코드·선박 목록을 보여주고 어떤 선주/선박을 검증할지 확인.
 3. 미리보기(기본): `python3 -m soa_verify verify --owner <코드>` 또는 `--vessel ABCD,EFGH` 또는 `--all`
    - 기간: `--from YYYYMM --to YYYYMM` (기본 당해 01~12), 부서: `--dept 05`(Technical, 기본) / `04`(Crew)
+   - **실행 시간이 길다**(라인마다 판정, 선박 여러 척이면 10~20분). **한 번만 실행**하고, Bash timeout을 최대(600000ms)로 두거나 백그라운드로 돌린 뒤 완료 알림을 기다려라. 끝나기 전에 같은 명령을 다시 실행하지 마라(중복 실행=시간·구독 사용량 낭비).
+   - 출력이 길면 `... > soa_result.txt 2>&1` 로 파일에 남기고 그 파일을 읽어 요약.
 4. 결과 요약: 선박별 CONFIRM / REJECT? / HUMAN 건수와 사유를 그대로 보여준다. 숫자·사유를 지어내지 마라.
 5. **저장은 사용자가 "저장해"라고 명시했을 때만**: 같은 인자에 `--save` 추가. 저장 전 "SVMS에 체크박스·리젝 리마크가 실제로 기입됩니다" 확인.
 6. 저장 후 합계(confirm 체크 수 · 리젝 리마크 수)를 보고하고, **SOA 승인(Approval)은 사용자가 SVMS에서 직접** 한다고 안내.
