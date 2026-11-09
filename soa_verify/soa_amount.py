@@ -562,7 +562,7 @@ def resolve(path, vessel, line_amt, line_cur, usd_amt=None, ident=None):
     found_txt = f"{hamt}" if h_real else (f"{hamt}(AI추정·본문없음)" if hamt is not None else "None")
     return dict(status="flag", basis=basis,
                 reason=f"라인 {la} 인보이스 미확인 (LLM matches={matches} found={found_txt} basis={basis} conf={conf})",
-                src=src, body_top=sorted([n for n in nums if la and n >= la * 0.5])[:10])
+                src=src, found_real=(hamt if h_real else None), body_top=sorted([n for n in nums if la and n >= la * 0.5])[:10])
 
 def haiku_invoice_total(txt, vessel, line_cur):
     """이 인보이스 1장의 '청구 총액(grand total)' 단일 숫자만 뽑는다. 합산검증용. 숫자|null."""

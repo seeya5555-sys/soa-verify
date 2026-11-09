@@ -163,9 +163,10 @@ def cmd_verify(a):
                     print(f"     ↩ s{seq} resubmitted by manager — left as is"); continue
                 if not R._is_amount_reject(why):
                     print(f"     ↩ s{seq} non-amount reason, report only: {why[:50]}"); continue
+                line = next((x for x in pending if x.get("SX_SEQ") == seq), {})
                 res = svms.save("PKG_CO_SLIP_EX", "SP_SET_SOA_D_STATUS",
                                 {"SX_CD": sx, "SX_SEQ": seq, "CFM_YN": "N", "RJT_YN": "Y",
-                                 "RJT_RMK": f"Cost no match: {why}"[:240], "STATUS2": "N", "STATUS_RMK2": None})
+                                 "RJT_RMK": R.reject_remark(sx, seq, line, why), "STATUS2": "N", "STATUS_RMK2": None})
                 writes += 1
                 if _remark_ok(res): tot["w_rjt"] += 1
                 else: print(f"     ! reject mark failed s{seq}: {str(res)[:60]}")
@@ -174,6 +175,40 @@ def cmd_verify(a):
         print(f"    saved: confirm checkbox {tot['w_cfm']} · reject remark {tot['w_rjt']}. Approval is left to you in SVMS.")
     else:
         print("    DRY run — nothing written. Re-run with --save to write.")
+
+
+def cmd_cleanup(a):
+    """리마크정리: confirm(CFM_YN=Y)된 라인에 남은 리젝 리마크만 삭제. 상태·금액·승인 무변경."""
+    svms.login()
+    vs = my_vessels()
+    if not vs:
+        raise SystemExit("My Vessel lookup returned nothing — stopping (fail-closed).")
+    targets = [x.strip().upper() for x in (a.vessel or "").split(",") if x.strip()]
+    bad = [t for t in targets if t not in vs]
+    if not targets or bad:
+        raise SystemExit(f"choose --vessel from your My Vessel {('(not yours: ' + ', '.join(bad) + ')') if bad else ''}")
+    n = 0
+    for vsl in targets:
+        hdr = svms.select("PKG_CO_SLIP_EX", "SP_GET_SOA",
+                          {"VSL_CD": vsl, "FM_DM": a.fm, "TO_DM": a.to, "SOA_OW_COMP_ID": "", "VSL_STATUS": "1"})
+        for r in (hdr.get("P_RS") or []):
+            if (r.get("SX_CD") or "")[:4] != vsl or r.get("STATUS") not in ("S", "D"):
+                continue
+            sx = r.get("SX_CD")
+            for l in svms.select("PKG_CO_SLIP_EX", "SP_GET_SOA_INFO", {"SX_CD": sx}).get("P_RS_D") or []:
+                # upstream soa_remark_cleanup.clear_rmk 와 동일: 상태가 정확히 CFM=Y·RJT=N 인 라인만,
+                # S/M 필드(STATUS2/STATUS_RMK2)는 현재값 그대로 echo → RJT_RMK 외 무변경.
+                if l.get("CFM_YN") == "Y" and l.get("RJT_YN") == "N" and (l.get("RJT_RMK") or "").strip():
+                    if a.save:
+                        res = svms.save("PKG_CO_SLIP_EX", "SP_SET_SOA_D_STATUS",
+                                        {"SX_CD": sx, "SX_SEQ": l.get("SX_SEQ"), "CFM_YN": "Y", "RJT_YN": "N",
+                                         "RJT_RMK": None, "STATUS2": l.get("STATUS2"), "STATUS_RMK2": l.get("STATUS_RMK2")})
+                        ok = _remark_ok(res)
+                    else:
+                        ok = True
+                    n += ok
+                    print(f"  {'cleared' if a.save else 'would clear'} {sx} s{l.get('SX_SEQ')}: {(l.get('RJT_RMK') or '')[:60]}")
+    print(f"=== remark cleanup: {n} line(s) {'cleared' if a.save else '(DRY — add --save)'} ===")
 
 
 def cmd_setup(_a):
@@ -198,6 +233,12 @@ def main(argv=None):
     v.add_argument("--save", action="store_true", help="write checkbox / reject remark to SVMS")
     v.add_argument("--cap", type=int, default=300, help="max line writes per run")
     v.set_defaults(fn=cmd_verify)
+    c = sub.add_parser("cleanup", help="remove leftover reject remarks on confirmed lines")
+    c.add_argument("--vessel", required=True)
+    c.add_argument("--from", dest="fm", default=os.environ.get("FM_DM", "202601"))
+    c.add_argument("--to", dest="to", default=os.environ.get("TO_DM", "202612"))
+    c.add_argument("--save", action="store_true")
+    c.set_defaults(fn=cmd_cleanup)
     a = p.parse_args(argv)
     for k in ("fm", "to"):
         if hasattr(a, k) and not re.fullmatch(r"20\d{2}(0[1-9]|1[0-2])", getattr(a, k)):

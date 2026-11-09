@@ -29,6 +29,28 @@ python3 -m soa_verify verify --owner 037 --save       # SVMS에 체크박스·�
 ```
 Claude Code에서는 저장소를 연 뒤 "SOA 1단계 검증 돌려줘"라고 하면 `.claude/skills/soa-verify` 스킬이 위 명령을 실행합니다.
 
+## 리마크정리
+```bash
+python3 -m soa_verify cleanup --vessel ABCD --from 202601 --to 202612          # 미리보기
+python3 -m soa_verify cleanup --vessel ABCD --from 202601 --to 202612 --save   # confirm 라인에 남은 리젝 리마크 삭제
+```
+
+## 내 웹사이트에 붙이기 (선택)
+Flask 사이트가 있으면 아래 2줄로 같은 입력 양식(선박코드·시작·끝·부서·검증 실기입·리마크정리)을 붙일 수 있습니다.
+```python
+from soa_verify.web import create_blueprint
+app.register_blueprint(create_blueprint(), url_prefix="/soa-verify")   # 반드시 내 사이트 로그인 뒤에 둘 것
+```
+- SVMS 아이디/비밀번호는 페이지에서 처음 한 번 입력하면 서버 PC에 저장(`~/.soa-verify/config.json`, 권한 600)
+- 판정 모델은 Haiku 5.5 고정(선택 없음). 서버 PC에 `claude` CLI가 로그인돼 있어야 합니다.
+- 이 블루프린트 자체에는 로그인 기능이 없습니다. 내 사이트 인증 아래에 마운트하세요.
+
+## 리젝 리마크 형식
+`Cost no match - Amount: SOA USD 164.41 / Invoice 109.71 | Invoice No.: SOA INV-123 - not found on invoice`
+- 금액: 인보이스에 실제로 적힌 다른 금액이 있을 때만 표시, 없으면 `not confirmed on invoice`
+- 인보이스 번호: `OK` / `not found on invoice` / `blank in SOA` / `not verified (unreadable scan)`
+- 리젝 판정 기준은 금액(인보이스 번호는 리마크 정보로만 사용)
+
 ## 판정 규칙(요약)
 | 라인 | 규칙 |
 |---|---|

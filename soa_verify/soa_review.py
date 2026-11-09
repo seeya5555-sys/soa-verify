@@ -211,10 +211,56 @@ def dl(sx, seq, files):
         except Exception: pass
     return paths
 
+
+LINE_DETAIL = {}
+
+def _norm_inv(s):
+    return re.sub(r"[^A-Z0-9]", "", str(s or "").upper())
+
+def _invoice_text(paths):
+    txt = ""
+    for p in (paths or [])[:3]:
+        try:
+            b = SA.pdf_body(p)
+            if len(b.strip()) < 15:
+                b = SA.ocr_body(p)
+            txt += "\n" + b
+        except Exception:
+            pass
+    return txt
+
+def reject_remark(sx, seq, l, reason):
+    """2026-11-09 형 지시: 리젝 건 리마크 = 인보이스 번호 + 금액 기본 문장틀(영문, 240자).
+    접두 'Cost no match'는 _is_amount_reject 재상신 판정 호환용으로 유지. 숫자는 SVMS 값 또는 본문 실재값만 사용."""
+    d = LINE_DETAIL.get((sx, str(seq)), {})
+    cur = l.get("SOA_CUR_CD") or "USD"
+    amt = l.get("SOA_AMT")
+    if reason == "첨부 없음":
+        a_part = f"Amount: SOA {cur} {amt} - no invoice attached"
+    elif d.get("found_real") is not None:
+        a_part = f"Amount: SOA {cur} {amt} / Invoice {d['found_real']}"
+    else:
+        a_part = f"Amount: SOA {cur} {amt} - not confirmed on invoice"
+    inv = (l.get("INV_NO") or "").strip()
+    if not inv:
+        i_part = "Invoice No.: blank in SOA"
+    elif not d.get("paths"):
+        i_part = f"Invoice No.: SOA {inv} - not verified (no invoice file)"
+    else:
+        body = _invoice_text(d["paths"])
+        if len(body.strip()) < 15:
+            i_part = f"Invoice No.: SOA {inv} - not verified (unreadable scan)"
+        elif _norm_inv(inv) and _norm_inv(inv) in _norm_inv(body):
+            i_part = f"Invoice No.: {inv} OK"
+        else:
+            i_part = f"Invoice No.: SOA {inv} - not found on invoice"
+    return f"Cost no match - {a_part} | {i_part}"[:240]
+
 def verify_opex(sx, seq, vsl, l, thorough):
     """returns (decision, reason). decision: confirm|flag|scan."""
     files = get_files(l.get("FILE_REF_NO") or (str(sx) + str(seq)))
     if not files:
+        LINE_DETAIL[(sx, str(seq))] = {"paths": [], "found_real": None}
         return "flag", "첨부 없음"
 
 
@@ -232,6 +278,7 @@ def verify_opex(sx, seq, vsl, l, thorough):
 
     pdfs = dl(sx, seq, files)
     if not pdfs:
+        LINE_DETAIL[(sx, str(seq))] = {"paths": [], "found_real": None}
         return ("confirm", f"파일명매칭(다운실패폴백) {soa_amt}{cur}") if fn_match else ("flag", "PDF 다운 실패")
     best = None
     for p in pdfs:
@@ -245,6 +292,7 @@ def verify_opex(sx, seq, vsl, l, thorough):
         return "confirm", rs["reason"]
     if rs and rs["status"] == "flag":
         best = rs
+    LINE_DETAIL[(sx, str(seq))] = {"paths": pdfs, "found_real": (best or {}).get("found_real")}
     if best and best["status"] == "scan":
         return "scan", best["reason"]
     return "flag", (best or {}).get("reason", "본문 미확인")
@@ -276,6 +324,7 @@ def verify_aor(sx, seq, vsl, l):
         r = SA.resolve(p, vsl, l.get("SOA_AMT"), l.get("SOA_CUR_CD") or "USD", usd_amt=usd(l), ident=VSL_IDENT.get(vsl))
         if r["status"] == "clean":
             return "confirm", f"AOR DN 본문확인 {r['reason']}", subj
+    LINE_DETAIL[(sx, str(seq))] = {"paths": pdfs, "found_real": None}
     return "flag", "AOR DN 금액 미확인", subj
 
 def _empty_frag():
@@ -333,6 +382,7 @@ def _review_soa_row(r, group, owner, skrt_set, thorough_group):
             is09 = (l.get("EXP_CD") or "").startswith("09")
             soa_tp = l.get("SOA_TP"); opex_tp = l.get("SOA_OPEX_TP")
             rec = {"sx": sx, "seq": seq, "vsl": vsl, "dept": sl_tp,
+                   "line": {k: l.get(k) for k in ("SOA_CUR_CD", "SOA_AMT", "INV_NO")},
                    "exp": l.get("EXP_NM"), "amt": l.get("SOA_AMT"), "cur": l.get("SOA_CUR_CD"),
                    "usd": l.get("AMT_USD"), "is09": is09}
             try:
