@@ -6,7 +6,7 @@ import subprocess
 
 
 CLAUDE_LIGHT_MODEL = os.environ.get("SOA_CLAUDE_REVIEW_MODEL", "claude-haiku-5-5")
-OPENAI_LIGHT_MODEL = os.environ.get("SOA_OPENAI_REVIEW_MODEL", "openai/gpt-5.4-mini")
+OPENAI_LIGHT_MODEL = os.environ.get("SOA_OPENAI_REVIEW_MODEL", "openai/gpt-6-luna")
 LLM_ERROR = {"_llm_error": True}
 
 
