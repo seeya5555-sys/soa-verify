@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+_cache/
+soa_verify/soa_pdfs/
+soa_verify/*.csv
+.soa-verify/
