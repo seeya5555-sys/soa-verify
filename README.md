@@ -35,7 +35,7 @@ Claude Code에서는 저장소를 연 뒤 "SOA 1단계 검증 돌려줘"라고 �
 | Asset | confirm |
 | AOR | 연동 AOR 승인액 일치 → 첨부 파일명 금액 → 본문 판독, 모두 실패 시 리젝 후보 |
 | Technical OPEX | 첨부 없음=리젝 후보 · 감독출장비 소액+N2F=confirm · 본문(텍스트/OCR) 금액 + Haiku 판독 · 다중 인보이스 합산 · 판독 불가=사람 |
-| Crew(04) | 선주 037 OPEX=confirm(upstream 규칙) · 그 외 선주=사람 검토 · 선주 001 Crew=제외 |
+| Crew(04) | 선주 037=Technical과 동일(첨부 본문 금액 검증) · 그 외 선주=사람 검토 · 선주 001 Crew=제외 |
 
 - 고액(USD 5,000 이상)은 선박명/IMO가 본문에 있어야 confirm.
 - 리젝 리마크는 금액 불일치 사유일 때만 저장(`Cost no match: …`), 그 외 사유는 보고만.

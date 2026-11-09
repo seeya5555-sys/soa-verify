@@ -133,9 +133,8 @@ def cmd_verify(a):
                 try:
                     if l.get("SOA_TP") == "A":
                         d, why = "confirm", "Asset"
-                    elif a.dept == "04" and l.get("SOA_OPEX_TP") != "A":
-                        d, why = (("confirm", "Crew OPEX (owner 037 rule)") if owner == "037"
-                                  else ("scan", "Crew OPEX — human review"))
+                    elif a.dept == "04" and l.get("SOA_OPEX_TP") != "A" and owner != "037":
+                        d, why = "scan", "Crew OPEX of this owner — human review"
                     elif l.get("SOA_OPEX_TP") == "A":
                         d, why, _s = R.verify_aor(sx, seq, vsl, l)
                     else:

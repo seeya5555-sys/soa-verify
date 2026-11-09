@@ -345,7 +345,7 @@ def _review_soa_row(r, group, owner, skrt_set, thorough_group):
                         if not subj: frag["aor_nodoc"].append(rec)
                     else:
 
-                        decision, reason = "confirm", "Crew OPEX 무조건확인(룰)"
+                        decision, reason = verify_opex(sx, seq, vsl, l, True)
                 elif opex_tp == "A":
                     decision, reason, subj = verify_aor(sx, seq, vsl, l)
                     rec["aor_subj"] = subj
