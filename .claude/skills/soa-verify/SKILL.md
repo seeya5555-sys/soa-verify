@@ -1,6 +1,6 @@
 ---
 name: soa-verify
-description: SVMS SOA 1단계 검증(인보이스 금액 대조)을 내 My Vessel 선박에 대해 실행하고, 라인 체크박스·리젝 리마크를 SVMS에 저장할 때. "SOA 검증", "SOA 1단계", "soa verify" 요청 시.
+description: SVMS SOA 1단계 검증(인보이스 금액 대조)을 사용자가 지정한 선박코드에 대해 실행하고, 라인 체크박스·리젝 리마크를 SVMS에 저장할 때. "SOA 검증", "SOA 1단계", "soa verify" 요청 시.
 ---
 
 # soa-verify (SOA 1단계 검증)
@@ -10,8 +10,8 @@ description: SVMS SOA 1단계 검증(인보이스 금액 대조)을 내 My Vesse
 ## 순서
 1. 처음이면 `python3 -m soa_verify setup` 을 사용자가 직접 실행하게 안내(아이디/비번은 사용자가 터미널에 입력, 너는 값을 묻거나 출력하지 않는다).
    그다음 `python3 -m soa_verify doctor` 로 환경을 점검한다. `=== ready ===`가 아니면 NG 항목(설치 안내가 같이 나옴)을 사용자에게 그대로 전달하고, 해결되기 전에는 verify/stage2를 실행하지 않는다.
-2. 대상 확인: `python3 -m soa_verify owners` → 선주코드·선박 목록을 보여주고 어떤 선주/선박을 검증할지 확인.
-3. 미리보기(기본): `python3 -m soa_verify verify --owner <코드>` 또는 `--vessel ABCD,EFGH` 또는 `--all`
+2. 대상 확인: 검증할 **선박코드(4자리)** 를 사용자에게 받는다. 선박 목록을 조회해 대신 고르거나, 말하지 않은 선박을 추가하지 마라. My Vessel 전체·선주 단위 일괄 실행 기능은 없다.
+3. 미리보기(기본): `python3 -m soa_verify verify --vessel ABCD,EFGH`
    - 기간: `--from YYYYMM --to YYYYMM` (생략 시 올해 01~12), 부서: `--dept 05`(Technical, 기본) / `04`(Crew)
    - **실행 시간이 길다**(라인마다 판정, 선박 여러 척이면 10~20분). **한 번만 실행**하고, Bash timeout을 최대(600000ms)로 두거나 백그라운드로 돌린 뒤 완료 알림을 기다려라. 끝나기 전에 같은 명령을 다시 실행하지 마라(중복 실행=시간·구독 사용량 낭비).
    - 출력이 길면 `... > soa_result.txt 2>&1` 로 파일에 남기고 그 파일을 읽어 요약.

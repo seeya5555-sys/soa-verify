@@ -1,7 +1,7 @@
 """Stub for the upstream group-config module.
 
 Upstream (the maintainer's private deployment) runs SOA review by vessel *groups* synced from a web UI.
-soa-verify selects vessels directly from your SVMS "My Vessel" list (see cli.py), so group functions
+soa-verify works on the vessel codes you pass with --vessel (see cli.py), so group functions
 are not used. They fail loudly if anything calls them.
 """
 

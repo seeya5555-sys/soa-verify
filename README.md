@@ -2,7 +2,7 @@
 
 SVMS의 **SOA(Statement of Account) 라인 금액을 첨부 인보이스와 대조**해서, 라인별로 confirm 체크 또는 리젝 체크+리마크를 달아주는 도구입니다. 각자 PC의 Claude Code에서 실행합니다.
 
-- 대상: 로그인한 사용자의 **My Vessel** 선박 전체 — 선주(OW_COMP_ID)별 또는 선박별 선택
+- 대상: **`--vessel`로 직접 지정한 선박코드**만 (여러 척은 쉼표로). My Vessel 목록에서 자동으로 고르는 기능은 없습니다.
 - 판정: 코드(텍스트/OCR 금액 대조) + Claude **Haiku 5.5**(본인 `claude` CLI 로그인 사용)
 - 범위: **체크박스·리마크 저장까지만.** SOA 승인, 전표상신, 리젝 제출, 메일 발송 기능은 없습니다(코드 자체가 없음).
 - 판정 엔진은 운영 중인 upstream과 같은 코드입니다(`UPSTREAM` 파일에 동기화 커밋 기록, 내보내기 때 구문(AST) 동일성 검사).
@@ -25,10 +25,9 @@ python3 -m soa_verify doctor               # 환경 점검: Python·poppler·tes
 
 ## 사용
 ```bash
-python3 -m soa_verify owners                          # 선주별 선박 목록
-python3 -m soa_verify verify --owner 037              # 미리보기(DRY, 기입 없음)
+python3 -m soa_verify verify --vessel ABCD,EFGH        # 미리보기(DRY, 기입 없음)
 python3 -m soa_verify verify --vessel ABCD --from 202601 --to 202606
-python3 -m soa_verify verify --owner 037 --save       # SVMS에 체크박스·리젝 리마크 저장
+python3 -m soa_verify verify --vessel ABCD --save      # SVMS에 체크박스·리젝 리마크 저장
 ```
 Claude Code에서는 저장소를 연 뒤 "SOA 1단계 검증 돌려줘"라고 하면 `.claude/skills/soa-verify` 스킬이 위 명령을 실행합니다.
 

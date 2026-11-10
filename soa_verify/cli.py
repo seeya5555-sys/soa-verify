@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""soa-verify — SVMS SOA stage-1 verification (amount vs invoice) for your own My Vessel list.
+"""soa-verify — SVMS SOA verification (stage 1: amount vs invoice, stage 2: extra checks) by vessel code.
 
   python3 -m soa_verify setup                         # store your SVMS id/password locally
-  python3 -m soa_verify owners                        # list owners (OW_COMP_ID) and vessels in your My Vessel
-  python3 -m soa_verify verify --owner 037            # DRY run (no write) for all vessels of an owner
-  python3 -m soa_verify verify --vessel ABCD,EFGH     # DRY run for specific vessels
-  python3 -m soa_verify verify --all --save           # write line checkbox / reject remark to SVMS
+  python3 -m soa_verify doctor                        # environment check (writes nothing)
+  python3 -m soa_verify verify --vessel ABCD,EFGH     # DRY run for the given vessel codes
+  python3 -m soa_verify verify --vessel ABCD --save   # write line checkbox / reject remark to SVMS
 
+Vessels are always named explicitly with --vessel. Nothing is selected from the user's "My Vessel" list.
 Scope (by design): line CONFIRM checkbox + REJECT checkbox with remark, saved to SVMS.
 There is no SOA approval, no slip submission, no reject submission and no e-mail in this project.
 """
@@ -36,18 +36,28 @@ def _write_config(user, pw):
     print(f"saved {svms.CONFIG_PATH} (permission 600). Password is never printed or uploaded.")
 
 
-def my_vessels():
-    """{vsl_cd: {"owner": OW_COMP_ID, "name": .., "imo": ..}} from the logged-in user's My Vessel."""
-    u = svms.select("PKG_CM_USER", "SP_GET_USER_INFO", {"USER_ID": svms.USER_ID})
+def fleet():
+    """{vsl_cd: {"owner": OW_COMP_ID, "name": .., "imo": ..}} — SVMS vessel master (one read-only call).
+    Used to validate the vessel codes you typed and to recognise other vessels' names/IMO on shared invoices."""
     out = {}
-    for r in (u.get("P_RS_VSL") or []):
-        v = r.get("VSL_CD")
-        if not v:
-            continue
-        d = (svms.select("PKG_CM_CD", "SP_GET_VSL", {"VSL_CD": v}).get("P_RS") or [{}])[0]
-        out[v] = {"owner": d.get("OW_COMP_ID"), "name": (d.get("NAME") or "").strip(),
-                  "imo": str(d.get("IMO_NO") or "").strip()}
+    for d in (svms.select("PKG_CM_CD", "SP_GET_VSL", {"VSL_CD": ""}).get("P_RS") or []):
+        v = str(d.get("CODE") or d.get("VSL_CD") or "").strip().upper()
+        if v:
+            out[v] = {"owner": d.get("OW_COMP_ID"), "name": (d.get("NAME") or "").strip(),
+                      "imo": str(d.get("IMO_NO") or "").strip()}
     return out
+
+
+def _targets(arg, vs):
+    """--vessel 'ABCD,EFGH' → validated codes. Unknown code = stop (typo guard). No other vessel is ever touched."""
+    if not vs:
+        raise SystemExit("SVMS vessel master lookup returned nothing — stopping (fail-closed).")
+    targets = [x.strip().upper() for x in (arg or "").split(",") if x.strip()]
+    bad = [t for t in targets if t not in vs]
+    if not targets or bad:
+        raise SystemExit("give vessel code(s) with --vessel, e.g. --vessel ABCD,EFGH"
+                         + (f" (unknown code: {', '.join(bad)})" if bad else ""))
+    return list(dict.fromkeys(targets))
 
 
 def _write_roster(vessels):
@@ -56,18 +66,6 @@ def _write_roster(vessels):
     rows = [{"vsl_cd": k, "name": v["name"], "imo": v["imo"]} for k, v in vessels.items()]
     with open(os.path.join(CACHE, "roster.json"), "w") as f:
         json.dump({"vessels": rows}, f)
-
-
-def cmd_owners(_a):
-    svms.login()
-    vs = my_vessels()
-    by = {}
-    for k, v in sorted(vs.items()):
-        by.setdefault(v["owner"] or "?", []).append(f"{k} ({v['name']})")
-    for o, lst in sorted(by.items()):
-        print(f"owner {o}: {len(lst)} vessel(s)")
-        for x in lst:
-            print(f"   - {x}")
 
 
 TOOLS = {   # 판정에 필요한 외부 프로그램. 없으면 본문을 못 읽어 정상 라인이 전부 리젝 후보로 나오므로 실행 전에 막는다.
@@ -95,7 +93,7 @@ def preflight(need):
 
 
 def cmd_doctor(_a):
-    """Environment check: Python, external programs, credentials, SVMS login, My Vessel. Writes nothing to SVMS."""
+    """Environment check: Python, external programs, credentials, SVMS login. Writes nothing to SVMS."""
     ok = True
     v = sys.version_info
     good = v >= (3, 10); ok &= good
@@ -110,12 +108,12 @@ def cmd_doctor(_a):
     if has_cred:
         try:
             svms.login()
-            n = len(my_vessels())
+            n = len(fleet())
             ok &= n > 0
-            print(f"[{'ok' if n else 'NG'}] SVMS login · My Vessel {n} vessel(s)")
+            print(f"[{'ok' if n else 'NG'}] SVMS login · vessel master {n} vessel(s)")
         except (Exception, SystemExit) as e:
             ok = False
-            print(f"[NG] SVMS login/My Vessel — {str(e)[:100]}")
+            print(f"[NG] SVMS login — {str(e)[:100]}")
     print("=== ready ===" if ok else "=== not ready — fix the NG items above ===")
     if not ok:
         raise SystemExit(1)
@@ -130,30 +128,14 @@ def _remark_ok(res):
 def cmd_verify(a):
     preflight(("pdftotext", "pdftoppm", "tesseract", "claude"))
     svms.login()
-    vs = my_vessels()
-    if not vs:
-        raise SystemExit("My Vessel lookup returned nothing — stopping (fail-closed).")
+    vs = fleet()
+    targets = _targets(a.vessel, vs)
     _write_roster(vs)
     os.environ.setdefault("SOA_DIRECT_SKIP", "1")
     os.environ.setdefault("SOA_PREFETCH", "1")
     import soa_review as R  # engine (imported after roster is written)
-    for k, v in vs.items():
-        R.VSL_IDENT[k] = [t for t in (v["imo"], v["name"]) if t]
-
-    if a.vessel:
-        targets = [x.strip().upper() for x in a.vessel.split(",") if x.strip()]
-        bad = [t for t in targets if t not in vs]
-        if bad:
-            raise SystemExit(f"not in your My Vessel: {', '.join(bad)}")
-    elif a.owner:
-        owners = {x.strip() for x in a.owner.split(",") if x.strip()}
-        targets = sorted(k for k, v in vs.items() if v["owner"] in owners)
-    elif a.all:
-        targets = sorted(vs)
-    else:
-        raise SystemExit("choose --vessel, --owner or --all (see `owners`)")
-    if not targets:
-        raise SystemExit("no vessels matched")
+    for k in targets:
+        R.VSL_IDENT[k] = [t for t in (vs[k]["imo"], vs[k]["name"]) if t]
 
     mode = "SAVE (writes checkbox / reject remark to SVMS)" if a.save else "DRY (no write)"
     print(f"=== soa-verify stage 1 · {mode} · dept {a.dept} · {a.fm}~{a.to} · model {__import__('llm_router').review_model()} ===")
@@ -232,13 +214,7 @@ def cmd_verify(a):
 def cmd_cleanup(a):
     """리마크정리: confirm(CFM_YN=Y)된 라인에 남은 리젝 리마크만 삭제. 상태·금액·승인 무변경."""
     svms.login()
-    vs = my_vessels()
-    if not vs:
-        raise SystemExit("My Vessel lookup returned nothing — stopping (fail-closed).")
-    targets = [x.strip().upper() for x in (a.vessel or "").split(",") if x.strip()]
-    bad = [t for t in targets if t not in vs]
-    if not targets or bad:
-        raise SystemExit(f"choose --vessel from your My Vessel {('(not yours: ' + ', '.join(bad) + ')') if bad else ''}")
+    targets = _targets(a.vessel, fleet())
     n = 0
     for vsl in targets:
         hdr = svms.select("PKG_CO_SLIP_EX", "SP_GET_SOA",
@@ -268,13 +244,7 @@ def cmd_stage2(a):
     import soa_stage2 as S2
     preflight(("pdftotext", "pdftoppm", "tesseract"))   # NRC 인보이스 판독용(2차는 AI 호출 없음)
     svms.login()
-    vs = my_vessels()
-    if not vs:
-        raise SystemExit("My Vessel lookup returned nothing — stopping (fail-closed).")
-    targets = [x.strip().upper() for x in (a.vessel or "").split(",") if x.strip()]
-    bad = [t for t in targets if t not in vs]
-    if not targets or bad:
-        raise SystemExit(f"choose --vessel from your My Vessel {('(not yours: ' + ', '.join(bad) + ')') if bad else ''}")
+    targets = _targets(a.vessel, fleet())
     S2.VERIFY, S2.SL_TP, S2.FM_DM, S2.TO_DM, S2.CAP = bool(a.save), a.dept, a.fm, a.to, a.cap
     rc = 0
     for vsl in targets:
@@ -303,11 +273,9 @@ def build_parser():
     p = argparse.ArgumentParser(prog="soa_verify")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("setup").set_defaults(fn=cmd_setup)
-    sub.add_parser("owners").set_defaults(fn=cmd_owners)
     sub.add_parser("doctor", help="check Python, external programs, credentials and SVMS login").set_defaults(fn=cmd_doctor)
     v = sub.add_parser("verify")
-    g = v.add_mutually_exclusive_group()
-    g.add_argument("--vessel"); g.add_argument("--owner"); g.add_argument("--all", action="store_true")
+    v.add_argument("--vessel", required=True, help="vessel code(s), comma separated")
     v.add_argument("--from", dest="fm", default=fm0)
     v.add_argument("--to", dest="to", default=to0)
     v.add_argument("--dept", default="05", choices=["05", "04"], help="05 Technical (default) / 04 Crew")

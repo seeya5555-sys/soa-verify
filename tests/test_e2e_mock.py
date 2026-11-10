@@ -37,10 +37,9 @@ class FakeSvms:
         return {"data": {proc: self.select(proc, prm)}}
 
     def select(self, proc, prm):
-        if proc == "SP_GET_USER_INFO":
-            return {"P_RS_VSL": [{"VSL_CD": VSL}]}
-        if proc == "SP_GET_VSL":
-            return {"P_RS": [{"VSL_CD": VSL, "OW_COMP_ID": "037", "NAME": "TEST SHIP NOT IN FEE TABLE", "IMO_NO": "1234567"}]}
+        if proc == "SP_GET_VSL":   # vessel master (CODE) — also answers the engine's single-vessel lookup (NAME)
+            return {"P_RS": [{"CODE": VSL, "OW_COMP_ID": "037", "NAME": "TEST SHIP NOT IN FEE TABLE", "IMO_NO": "1234567"},
+                             {"CODE": "EFGH", "OW_COMP_ID": "001", "NAME": "OTHER SHIP", "IMO_NO": "7654321"}]}
         if proc == "SP_GET_SOA":
             return {"P_RS": [{"SX_CD": SX, "SL_TP": self.sl_tp, "STATUS": self.status, "SL_DM": "202601"}]}
         if proc == "SP_GET_SOA_INFO":
@@ -121,10 +120,27 @@ class E2E(unittest.TestCase):
         rc, out = self.run_cli(fake, "stage2", "--vessel", VSL, "--from", "202601", "--to", "202612", "--save")
         self.assertEqual(rc, 0, out); self.assertEqual(len(fake.saves), n)           # second run writes nothing
 
-    def test_stage2_not_my_vessel_refused(self):
+    def test_unknown_vessel_code_refused(self):
         fake = self.stage2_fake()
-        rc, _ = self.run_cli(fake, "stage2", "--vessel", "ZZZZ", "--save")
-        self.assertNotEqual(rc, 0); self.assertEqual(fake.saves, [])
+        for cmd in ("stage2", "verify", "cleanup"):
+            rc, _ = self.run_cli(fake, cmd, "--vessel", "ZZZZ", "--save")
+            self.assertNotEqual(rc, 0); self.assertEqual(fake.saves, [])
+
+    def test_my_vessel_is_never_queried_and_bulk_modes_are_gone(self):
+        fake = self.stage2_fake()
+        self.run_cli(fake, "verify", "--vessel", VSL)
+        self.run_cli(fake, "stage2", "--vessel", VSL)
+        self.run_cli(fake, "doctor")
+        self.assertNotIn("SP_GET_USER_INFO", {c[1] for c in fake.calls})
+        for argv in (["owners"], ["verify", "--all"], ["verify", "--owner", "037"], ["verify"]):
+            with contextlib.redirect_stderr(io.StringIO()):
+                rc, _ = self.run_cli(FakeSvms([line("0001")]), *argv)
+            self.assertNotEqual(rc, 0, argv)
+
+    def test_only_named_vessels_are_touched(self):
+        fake = self.stage2_fake()                       # master also lists EFGH; only ABCD was named
+        self.run_cli(fake, "verify", "--vessel", VSL, "--save")
+        self.assertTrue(all(str(s["SX_CD"]).startswith(VSL) for s in fake.saves))
 
     def test_stage1_verify_asset_confirm_and_no_attachment_flag(self):
         fake = FakeSvms([line("0001", SOA_TP="A"), line("0002")])
@@ -164,7 +180,7 @@ class E2E(unittest.TestCase):
             rc, out = self.run_cli(fake, "doctor")
         finally:
             cli.missing_tools = orig
-        self.assertEqual(rc, 1); self.assertIn("[NG] tesseract", out); self.assertIn("My Vessel 1 vessel", out)
+        self.assertEqual(rc, 1); self.assertIn("[NG] tesseract", out); self.assertIn("vessel master 2 vessel", out)
         self.assertEqual(fake.saves, [])
 
     def test_default_period_is_current_year(self):
