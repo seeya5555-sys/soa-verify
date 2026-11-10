@@ -34,8 +34,9 @@ Claude Code에서는 저장소를 연 뒤 "SOA 1단계 검증 돌려줘"라고 �
 - **Operational AOR**: Tech(05)/Crew(04) SOA 라인의 AOR Req No를 비용청구 AOR 원장에서 조회해 Dept가 Operational이면 리젝 체크 + 리마크
   `Operational AOR: <AOR No> (Dept: Operational) - not chargeable to Technical SOA. Pls move to Operational SOA.`
 - **외화 환율 과청구**: Local Currency가 USD가 아닌 라인. 기준 USD = Local Amount × 기준환율(SVMS 환율표 교차, 없으면 하나은행 당일 매매기준율 교차). 청구 USD가 기준의 120% 이상이면 리젝 체크 + `FX over-charged: ...` 리마크(낮은 건 무관)
-- **관리비 SMA 초과**: 비용코드 080101 라인의 SOA 합계가 계약(일 단가 × 해당 월 일수 또는 월 고정액)보다 $1 넘게 높으면 리젝 + `Mgmt fee over SMA: ...`. 계약표는 저장소에 없음 — `~/.soa-verify/mgmt_fee.json`(또는 `SOA_MGMT_FEE_DB` 경로)에 `{"vessels": {"VESSEL NAME": {"basis": "daily|monthly", "rate": 255, "manager": "CSM"}}}` 형식으로 두면 검사, 없으면 건너뜀(경고)
-- **NRC 인보이스**: 첨부 PDF 본문에 National Response Corporation / OPA 90 Service Invoice가 있으면 리젝 + 리마크 `NRC invoice`
+- **관리비 SMA 초과**: 비용코드 080101 라인의 SOA 합계가 계약(일 단가 × 해당 월 일수 또는 월 고정액)보다 $1 넘게 높으면 리젝 + `Mgmt fee over SMA: ...`. 계약표는 저장소에 내장(`soa_verify/soa_mgmt_fee.json`, 선박명 기준 184척) — 받으면 바로 사용. 다른 표를 쓰려면 `SOA_MGMT_FEE_DB` 경로 지정. 표에 없는 선박은 건너뜀(경고)
+- **NRC 인보이스**: 첨부 PDF 본문에 National Response Corporation / OPA 90 Service Invoice가 있으면 리젝 + 리마크 `NRC invoice`. 1단계가 남긴 본문 텍스트 캐시를 재사용(PDF 재추출 없음)
+- 리젝 사유가 여러 개면 리마크에 전부 ` | `로 이어서 남김(NRC → Operational AOR → 관리비 → 환율 순, 240자 넘으면 숫자 유지 축약)
 - AOR·환율 조회 실패가 1건이라도 있으면 아무것도 기입하지 않고 "확인필요"로만 보고합니다. 이미 리젝된 라인·관리사 재상신 라인의 리마크는 덮어쓰지 않습니다.
 ```bash
 python3 -m soa_verify stage2 --vessel ABCD --from 202601 --to 202612 --dept 05          # 미리보기

@@ -2,7 +2,7 @@ import os, sys, unittest
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "soa_verify"))
 import soa_stage2 as S2
 
-AORS = {"SVMLCA2609010001": {"AOR_CD": "SVMLCA2609010001", "DEPT_CD": "O"},
+AORS = {"ABCDCA2609010001": {"AOR_CD": "ABCDCA2609010001", "DEPT_CD": "O"},
         "ATMTCA2509250007": {"AOR_CD": "ATMTCA2509250007", "DEPT_CD": "T"}}
 
 
@@ -20,24 +20,24 @@ class T(unittest.TestCase):
         self.assertEqual(S2.judge_line({"REF_NO": None}, lk, "05")[0], "skip")
 
     def test_operational_rejected(self):
-        v, a, _, _r = S2.judge_line({"REF_NO": "SVMLCA2609010001", "CFM_YN": "Y"}, lk, "05")
-        self.assertEqual((v, a), ("reject", "SVMLCA2609010001"))
+        v, a, _, _r = S2.judge_line({"REF_NO": "ABCDCA2609010001", "CFM_YN": "Y"}, lk, "05")
+        self.assertEqual((v, a), ("reject", "ABCDCA2609010001"))
 
     def test_technical_passes(self):
         self.assertEqual(S2.judge_line({"REF_NO": "ATMTCA2509250007"}, lk, "05")[0], "pass")
 
     def test_lookup_fail_closed(self):
-        self.assertEqual(S2.judge_line({"REF_NO": "SVMLCA2609010001"}, boom, "05")[0], "error")
+        self.assertEqual(S2.judge_line({"REF_NO": "ABCDCA2609010001"}, boom, "05")[0], "error")
         self.assertEqual(S2.judge_line({"REF_NO": "XXXXCA2609010001"}, lk, "05")[0], "error")
 
     def test_existing_reject_not_overwritten(self):
-        l = {"REF_NO": "SVMLCA2609010001", "RJT_YN": "Y", "RJT_RMK": "Cost no match"}
+        l = {"REF_NO": "ABCDCA2609010001", "RJT_YN": "Y", "RJT_RMK": "Cost no match"}
         self.assertEqual(S2.judge_line(l, lk, "05")[0], "already")
         l2 = {**l, "STATUS2": "Y", "STATUS_RMK2": "fixed"}
         self.assertEqual(S2.judge_line(l2, lk, "05")[0], "resub")
 
     def test_preserve_unrejected_with_remark(self):
-        base = {"REF_NO": "SVMLCA2609010001", "RJT_YN": "N"}
+        base = {"REF_NO": "ABCDCA2609010001", "RJT_YN": "N"}
         self.assertEqual(S2.judge_line({**base, "RJT_RMK": "old"}, lk, "05")[0], "already")
         self.assertEqual(S2.judge_line({**base, "STATUS2": "Y"}, lk, "05")[0], "resub")
         self.assertEqual(S2.judge_line({**base, "STATUS_RMK2": "mgr"}, lk, "05")[0], "resub")
@@ -46,7 +46,7 @@ class T(unittest.TestCase):
         st = {"lines": {l["SX_SEQ"]: dict(l) for l in lines}, "saves": [], "hdr": "S"}
         def select(pkg, sp, prm):
             if sp == "SP_GET_SOA":
-                return {"P_RS": [{"SX_CD": "SVMLCX2609010001", "SL_TP": "05", "STATUS": st["hdr"], "SL_DM": "202609"}]}
+                return {"P_RS": [{"SX_CD": "TEST-SOA-0001", "SL_TP": "05", "STATUS": st["hdr"], "SL_DM": "202609"}]}
             if sp == "SP_GET_SOA_INFO":
                 return {"P_RS_D": [dict(v) for v in st["lines"].values()]}
             if sp == "SP_GET_VSL":
@@ -71,30 +71,30 @@ class T(unittest.TestCase):
         return st
 
     def test_preflight_error_blocks_all_writes(self):
-        st = self._env([{"SX_SEQ": 1, "REF_NO": "SVMLCA2609010001"}, {"SX_SEQ": 2, "REF_NO": "SVMLCA2609010002"}],
-                       {"SVMLCA2609010001": {"AOR_CD": "SVMLCA2609010001", "DEPT_CD": "O"}, "SVMLCA2609010002": "boom"})
-        self.assertEqual(S2.run("SVML"), 1); self.assertEqual(st["saves"], [])
+        st = self._env([{"SX_SEQ": 1, "REF_NO": "ABCDCA2609010001"}, {"SX_SEQ": 2, "REF_NO": "ABCDCA2609010002"}],
+                       {"ABCDCA2609010001": {"AOR_CD": "ABCDCA2609010001", "DEPT_CD": "O"}, "ABCDCA2609010002": "boom"})
+        self.assertEqual(S2.run("TEST"), 1); self.assertEqual(st["saves"], [])
 
     def test_write_verified_by_reread(self):
-        st = self._env([{"SX_SEQ": 1, "REF_NO": "SVMLCA2609010001"}],
-                       {"SVMLCA2609010001": {"AOR_CD": "SVMLCA2609010001", "DEPT_CD": "O"}})
-        self.assertEqual(S2.run("SVML"), 0); self.assertEqual(len(st["saves"]), 1)
+        st = self._env([{"SX_SEQ": 1, "REF_NO": "ABCDCA2609010001"}],
+                       {"ABCDCA2609010001": {"AOR_CD": "ABCDCA2609010001", "DEPT_CD": "O"}})
+        self.assertEqual(S2.run("TEST"), 0); self.assertEqual(len(st["saves"]), 1)
         self.assertEqual(st["lines"][1]["RJT_YN"], "Y")
 
     def test_unconfirmed_write_stops(self):
-        st = self._env([{"SX_SEQ": 1, "REF_NO": "SVMLCA2609010001"}, {"SX_SEQ": 2, "REF_NO": "SVMLCA2609010001"}],
-                       {"SVMLCA2609010001": {"AOR_CD": "SVMLCA2609010001", "DEPT_CD": "O"}}, fail_after_write=True)
-        self.assertEqual(S2.run("SVML"), 1); self.assertEqual(len(st["saves"]), 1)
+        st = self._env([{"SX_SEQ": 1, "REF_NO": "ABCDCA2609010001"}, {"SX_SEQ": 2, "REF_NO": "ABCDCA2609010001"}],
+                       {"ABCDCA2609010001": {"AOR_CD": "ABCDCA2609010001", "DEPT_CD": "O"}}, fail_after_write=True)
+        self.assertEqual(S2.run("TEST"), 1); self.assertEqual(len(st["saves"]), 1)
 
     def test_header_changed_skips(self):
-        st = self._env([{"SX_SEQ": 1, "REF_NO": "SVMLCA2609010001"}],
-                       {"SVMLCA2609010001": {"AOR_CD": "SVMLCA2609010001", "DEPT_CD": "O"}})
+        st = self._env([{"SX_SEQ": 1, "REF_NO": "ABCDCA2609010001"}],
+                       {"ABCDCA2609010001": {"AOR_CD": "ABCDCA2609010001", "DEPT_CD": "O"}})
         orig = S2._soa_now
         def flip(*a, **k):
             st["hdr"] = "C"; return orig(*a, **k)
         S2._soa_now = flip
         try:
-            S2.run("SVML")
+            S2.run("TEST")
         finally:
             S2._soa_now = orig
         self.assertEqual(st["saves"], [])
@@ -131,9 +131,10 @@ class T(unittest.TestCase):
         self.assertEqual(S2.judge_line({"SOA_CUR_CD": "EUR", "SOA_AMT": -600, "AMT_USD": -9000}, lk, "05", self.FX)[0], "skip")
 
     def test_both_findings_combined(self):
-        l = {"REF_NO": "SVMLCA2609010001", "SOA_CUR_CD": "EUR", "SOA_AMT": 600, "AMT_USD": 2000}
+        l = {"REF_NO": "ABCDCA2609010001", "SOA_CUR_CD": "EUR", "SOA_AMT": 600, "AMT_USD": 2000}
         v, _, tags, r = S2.judge_line(l, lk, "05", self.FX)
         self.assertEqual((v, tags), ("reject", "A+B")); self.assertIn(" | FX over-charged", r)
+        self.assertTrue(r.startswith("Operational AOR: ABCDCA2609010001"))
         self.assertLessEqual(len(r), 240)
 
     def test_hana_parser(self):
@@ -189,26 +190,27 @@ class T(unittest.TestCase):
         self.assertEqual(S2.judge_line({"SOA_CUR_CD": "USD", "RJT_YN": "Y", "RJT_RMK": "NRC invoice"}, lk, "05", None, None, True)[0], "already")
 
     def test_fee_db_loaded(self):
-        import json, tempfile
-        f = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
-        json.dump({"vessels": {"Atlantic Merchant": {"basis": "daily", "rate": 204}, "PELICAN MARINER": {"basis": "monthly", "rate": 8000}}}, f); f.close()
-        db = S2.load_mgmt_fee(f.name)
+        db = S2.load_mgmt_fee()
         self.assertEqual(db["ATLANTIC MERCHANT"]["rate"], 204); self.assertEqual(db["PELICAN MARINER"]["basis"], "monthly")
 
     def test_nrc_remark_exact_when_combined(self):
-        l = {"REF_NO": "SVMLCA2609010001", "SOA_CUR_CD": "EUR", "SOA_AMT": 600, "AMT_USD": 2000, "EXP_CD": "080101"}
-        v, _, tags, r = S2.judge_line(l, lk, "05", self.FX, (10.0, 2000.0, "x"), True)
-        self.assertEqual((v, r), ("reject", "NRC invoice")); self.assertEqual(tags, "A+B+C+D")
+        l = {"REF_NO": "ABCDCA2609010001", "SOA_CUR_CD": "EUR", "SOA_AMT": 600, "AMT_USD": 2000, "EXP_CD": "080101"}
+        v, _, tags, r = S2.judge_line(l, lk, "05", self.FX, (10.0, 2000.0, "345/day x 31d, CSM"), True)
+        self.assertEqual((v, tags), ("reject", "A+B+C+D"))
+        self.assertTrue(r.startswith("NRC invoice | Operational AOR"), r)
+        for k in ("ABCDCA2609010001", "FX over-charged", "Mgmt fee over SMA", "2,000"):
+            self.assertIn(k, r)
+        self.assertLessEqual(len(r), 240)
 
     def test_other_line_change_makes_stale(self):
-        st = self._env([{"SX_SEQ": 1, "REF_NO": "SVMLCA2609010001"}, {"SX_SEQ": 2, "REF_NO": None, "SOA_AMT": 5}],
-                       {"SVMLCA2609010001": {"AOR_CD": "SVMLCA2609010001", "DEPT_CD": "O"}})
+        st = self._env([{"SX_SEQ": 1, "REF_NO": "ABCDCA2609010001"}, {"SX_SEQ": 2, "REF_NO": None, "SOA_AMT": 5}],
+                       {"ABCDCA2609010001": {"AOR_CD": "ABCDCA2609010001", "DEPT_CD": "O"}})
         orig = S2._soa_now
         def mutate(*a, **k):
             st["lines"][2]["SOA_AMT"] = 999; return orig(*a, **k)
         S2._soa_now = mutate
         try:
-            S2.run("SVML")
+            S2.run("TEST")
         finally:
             S2._soa_now = orig
         self.assertEqual(st["saves"], [])
@@ -222,9 +224,47 @@ class T(unittest.TestCase):
         finally:
             R.get_files = o
 
+    def test_remark_never_truncates_reasons(self):
+        long_b = ("B", "FX over-charged: EUR 99,999,999.99 -> USD 999,999,999.99 (ref rate 1.1222 SVMS, ref USD 112,219,999.99, +791.1%)" + "x" * 120)
+        fs = [("A", "Operational AOR: ABCDCA2609010001 (Dept: Operational) - not chargeable to Technical SOA. Pls move to Operational SOA."),
+              ("C", "Mgmt fee over SMA: charged USD 99,999,999.00 vs contract USD 10,695.00 (345/day x 31d, CSM)" + "y" * 150),
+              long_b, ("D", "NRC invoice")]
+        r = S2.combine_remarks(fs)
+        self.assertLessEqual(len(r), 240)
+        for k in ("NRC invoice", "Operational AOR", "Mgmt fee over SMA", "FX over-charged"):
+            self.assertIn(k, r)
+        self.assertTrue(r.startswith("NRC invoice"))
+
+    def test_text_cache_hash_guard(self):
+        import tempfile, shutil
+        import soa_amount as SA
+        d = tempfile.mkdtemp()
+        try:
+            p = os.path.join(d, "a.pdf"); open(p, "wb").write(b"%PDF-1 one")
+            SA._text_cache_put(p, "text", "NATIONAL RESPONSE CORPORATION", SA._pdf_sha(p))
+            self.assertEqual(SA.cached_texts(p), {"text": "NATIONAL RESPONSE CORPORATION"})
+            open(p, "wb").write(b"%PDF-1 two")                        # 같은 크기 교체
+            self.assertEqual(SA.cached_texts(p), {})
+            SA._text_cache_put(p, "text", "stale", "deadbeef")         # 추출 중 교체(해시 불일치) → 저장 안 함
+            self.assertEqual(SA.cached_texts(p), {})
+        finally:
+            shutil.rmtree(d)
+
+    def test_nrc_checks_all_cached_texts(self):
+        import soa_review as R, soa_amount as SA
+        o = (R.get_files, R.dl, R._is_pdf_file, SA.cached_texts, SA.pdf_body)
+        try:
+            R.get_files = lambda *a: [{"FILE_NM": "x.pdf"}]; R._is_pdf_file = lambda f: True
+            R.dl = lambda sx, seq, fs: ["/x.pdf"]
+            SA.cached_texts = lambda p: {"ocr300p3": "z" * 5000, "text": "short page1 National Response Corporation"}
+            SA.pdf_body = lambda p: (_ for _ in ()).throw(AssertionError("should not re-extract"))
+            self.assertTrue(S2.nrc_scan("SX", {"SX_SEQ": 1}, []))
+        finally:
+            R.get_files, R.dl, R._is_pdf_file, SA.cached_texts, SA.pdf_body = o
+
     def test_remark(self):
-        r = S2.operational_remark("SVMLCA2609010001", "04")
-        self.assertTrue(r.startswith("Operational AOR: SVMLCA2609010001"))
+        r = S2.operational_remark("ABCDCA2609010001", "04")
+        self.assertTrue(r.startswith("Operational AOR: ABCDCA2609010001"))
         self.assertIn("Crew SOA", r)
         self.assertLessEqual(len(r), 240)
 

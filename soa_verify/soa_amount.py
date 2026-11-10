@@ -5,8 +5,57 @@
 import os, re, json, glob, subprocess, shutil
 from llm_router import llm_json, review_model
 
+def _pdf_sha(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _text_cache_get(path, kind):
+    """1차에서 뽑은 본문 텍스트 사이드카 재사용(2차 등에서 PDF 재추출·재OCR 생략). PDF 내용 해시 일치할 때만."""
+    try:
+        with open(f"{path}.{kind}.txt", encoding="utf-8") as f:
+            head, _, body = f.read().partition("\n")
+        return body if head == _pdf_sha(path) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _text_cache_put(path, kind, txt, sha_before):
+    """추출 전후 PDF 해시가 같을 때만 저장(추출 중 교체 방지)."""
+    try:
+        if not sha_before or _pdf_sha(path) != sha_before:
+            return
+        tmp = f"{path}.{kind}.txt.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(f"{sha_before}\n{txt}")
+        os.replace(tmp, f"{path}.{kind}.txt")
+    except OSError:
+        pass
+
+
+def _sha_or_none(path):
+    try:
+        return _pdf_sha(path)
+    except OSError:
+        return None
+
+
 def pdf_body(path):
-    """pdftotext 2중추출(-layout + plain). 스캔본이면 빈 문자열."""
+    """pdftotext 2중추출(-layout + plain). 스캔본이면 빈 문자열. 결과는 사이드카 캐시(.text.txt)."""
+    hit = _text_cache_get(path, "text")
+    if hit is not None:
+        return hit
+    sha = _sha_or_none(path)
+    txt = _pdf_body_raw(path)
+    _text_cache_put(path, "text", txt, sha)
+    return txt
+
+
+def _pdf_body_raw(path):
     txt = ""
     for args in (["pdftotext", "-layout", path, "-"], ["pdftotext", path, "-"]):
         try: txt += subprocess.run(args, capture_output=True, text=True, timeout=60).stdout + "\n"
@@ -14,7 +63,35 @@ def pdf_body(path):
     return txt
 
 def ocr_body(path, maxpages=3, dpi=200):
-    """스캔본 fallback: pdftoppm dpi → tesseract."""
+    """스캔본 fallback: pdftoppm dpi → tesseract. 결과는 사이드카 캐시(.ocr{dpi}p{maxpages}.txt)."""
+    kind = f"ocr{dpi}p{maxpages}"
+    hit = _text_cache_get(path, kind)
+    if hit is not None:
+        return hit
+    sha = _sha_or_none(path)
+    txt = _ocr_body_raw(path, maxpages, dpi)
+    _text_cache_put(path, kind, txt, sha)
+    return txt
+
+
+def cached_texts(path):
+    """캐시된 본문 전부 {kind: text}(해시 일치분만). 2차 NRC 등은 전부 검사(길이 기준 단일 선택 금지)."""
+    import glob as _g
+    out = {}
+    for side in _g.glob(glob_escape(path) + ".*.txt"):
+        kind = side[len(path) + 1:-4]
+        t = _text_cache_get(path, kind)
+        if t is not None:
+            out[kind] = t
+    return out
+
+
+def glob_escape(p):
+    import glob as _g
+    return _g.escape(p)
+
+
+def _ocr_body_raw(path, maxpages=3, dpi=200):
     import tempfile
     txt = ""
     tmp = tempfile.mkdtemp(prefix="soaocr_")

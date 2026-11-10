@@ -1,0 +1,1109 @@
+{
+ "source": "Management Fee 관리사 정리.xlsx (2026-11-10, 수혁 취합)",
+ "vessels": {
+  "ANGOLA PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "BALTIC LOYALTY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "BANGLADESH PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "CARIBBEAN LOYALTY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "CHILE PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "CONGO PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "FIJI PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "JAMAICA PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "KENYA B": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "NORTH LOYALTY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "SENEGAL PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "SRI LANKA PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "SURINAME PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "SWEDEN PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "TUNISIA PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "WEST LOYALTY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "SINGAPORE PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "TONGA PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 1"
+  },
+  "PACIFIC CORAL": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 345.0,
+   "sheet": "TRMT 1"
+  },
+  "PACIFIC TOPAZ": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 345.0,
+   "sheet": "TRMT 1"
+  },
+  "COSTA RICA PROSPERITY": {
+   "manager": "WAH KWONG",
+   "basis": "daily",
+   "rate": 361.64387,
+   "sheet": "TRMT 1"
+  },
+  "PLATA CARRIER": {
+   "manager": "AETM",
+   "basis": "monthly",
+   "rate": 13333.33333,
+   "sheet": "TRMT 1"
+  },
+  "PLATA LUCKY": {
+   "manager": "AETM",
+   "basis": "monthly",
+   "rate": 13333.33333,
+   "sheet": "TRMT 1"
+  },
+  "PLATA SINGAPORE": {
+   "manager": "AETM",
+   "basis": "monthly",
+   "rate": 13333.33333,
+   "sheet": "TRMT 1"
+  },
+  "DOMINICA PROSPERITY": {
+   "manager": "AESM",
+   "basis": "monthly",
+   "rate": 13333.33333,
+   "sheet": "TRMT 1"
+  },
+  "SUDAN PROSPERITY": {
+   "manager": "AESM",
+   "basis": "monthly",
+   "rate": 13333.33333,
+   "sheet": "TRMT 1"
+  },
+  "BAHAMAS PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "BARBADOS PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "BULGARIA PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "CAMEROON PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "CARIBBEAN GLORY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "CROATIA PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "EAST LOYALTY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "ECUADOR PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "EGYPT PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "ETHIOPIA PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "FRANCE C": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "FUJAIRAH ENERGY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "GERMANY B": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "IVORY COAST PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "MALTA PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "MEGAN GLORY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "MERSIN PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "MONACO LOYALTY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "MONACO PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "MONIQUE GLORY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "MOROCCO PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "MYANMAR PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "PHILIPPINES PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "RIO DE JANEIRO ENERGY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "ROTTERDAM ENERGY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "SINGAPORE LOYALTY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "SOUTH LOYALTY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "THAILAND PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "TOGO PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 1"
+  },
+  "PACIFIC JADE": {
+   "manager": "STASCO",
+   "basis": "monthly",
+   "rate": 13125.0,
+   "sheet": "TRMT 1"
+  },
+  "PACIFIC SAPPHIRE": {
+   "manager": "STASCO",
+   "basis": "monthly",
+   "rate": 7833.33333,
+   "sheet": "TRMT 1"
+  },
+  "FINLAND PROSPERITY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 1"
+  },
+  "GABON PROSPERITY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 1"
+  },
+  "MALAYSIA PROSPERITY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 1"
+  },
+  "OCEAN LOYALTY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 1"
+  },
+  "PACIFIC DIAMOND": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 8000.0,
+   "sheet": "TRMT 1"
+  },
+  "PACIFIC EMERALD": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 8000.0,
+   "sheet": "TRMT 1"
+  },
+  "PACIFIC GARNET": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 8000.0,
+   "sheet": "TRMT 1"
+  },
+  "PACIFIC OPAL": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 8000.0,
+   "sheet": "TRMT 1"
+  },
+  "PACIFIC PEARL": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 8000.0,
+   "sheet": "TRMT 1"
+  },
+  "PACIFIC RUBY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 8000.0,
+   "sheet": "TRMT 1"
+  },
+  "PANAMA PROSPERITY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 1"
+  },
+  "ROMANIA PROSPERITY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 1"
+  },
+  "TANZANIA PROSPERITY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 1"
+  },
+  "SINGAPORE ENERGY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 1"
+  },
+  "GULF SUNRISE": {
+   "manager": "V. GER",
+   "basis": "monthly",
+   "rate": 12083.33333,
+   "sheet": "TRMT 1"
+  },
+  "PACIFIC SUCCESS": {
+   "manager": "WSM",
+   "basis": "monthly",
+   "rate": 14583.33333,
+   "sheet": "TRMT 1"
+  },
+  "GULF LOYALTY": {
+   "manager": "OSC",
+   "basis": "monthly",
+   "rate": 14166.6666,
+   "sheet": "TRMT 1"
+  },
+  "PACIFIC MARTINA": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 330.0,
+   "sheet": "TRMT 2"
+  },
+  "PACIFIC DEBBIE": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 345.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER CINDY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 345.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER DUBAI": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 345.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER ELEANOR": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 345.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER ELLIE": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 345.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER EMILY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 345.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER HANNAH": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 345.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER LONDON": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 345.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER MILLIE": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 345.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER ORLA": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 345.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER PHILIPPA": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 345.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER VALERIE": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 345.0,
+   "sheet": "TRMT 2"
+  },
+  "PLATA EAST": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 2"
+  },
+  "PLATA WEST": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER HOUSTON": {
+   "manager": "TSM",
+   "basis": "daily",
+   "rate": 386.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER LINDA": {
+   "manager": "TSM",
+   "basis": "daily",
+   "rate": 386.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER ZOE": {
+   "manager": "TSM",
+   "basis": "daily",
+   "rate": 386.0,
+   "sheet": "TRMT 2"
+  },
+  "ALGERIA PROSPERITY": {
+   "manager": "EXECUTIVE",
+   "basis": "monthly",
+   "rate": 12000.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER GINNY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER ESTHER": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER MONIKA": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER GERTRUDE": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER GWEN": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "ZIRCON": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "CITRINE": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "OBSIDIAN": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER VENUS": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "JOCELYN GLORY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "CINDY GLORY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "ANGELA GLORY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "PACIFIC SARAH": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "PACIFIC JULIA": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "PACIFIC A. DORODCHI": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "PACIFIC NAFSIKA": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 2"
+  },
+  "PAULA GLORY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 9000.0,
+   "sheet": "TRMT 2"
+  },
+  "VICTORIA GLORY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 9000.0,
+   "sheet": "TRMT 2"
+  },
+  "SABRINA GLORY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 9000.0,
+   "sheet": "TRMT 2"
+  },
+  "JESSIE GLORY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 9000.0,
+   "sheet": "TRMT 2"
+  },
+  "JILL GLORY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 9000.0,
+   "sheet": "TRMT 2"
+  },
+  "MONGOLIA PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 9500.0,
+   "sheet": "TRMT 2"
+  },
+  "BRUNEI PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 9500.0,
+   "sheet": "TRMT 2"
+  },
+  "SILVER EUPLECTA": {
+   "manager": "SCORPIO",
+   "basis": "monthly",
+   "rate": 14166.66667,
+   "sheet": "TRMT 2"
+  },
+  "SILVER EBALINA": {
+   "manager": "SCORPIO",
+   "basis": "monthly",
+   "rate": 14166.66667,
+   "sheet": "TRMT 2"
+  },
+  "SILVER ERVILIA": {
+   "manager": "SCORPIO",
+   "basis": "monthly",
+   "rate": 14166.66667,
+   "sheet": "TRMT 2"
+  },
+  "SILVER EBURNA": {
+   "manager": "SCORPIO",
+   "basis": "monthly",
+   "rate": 14166.66667,
+   "sheet": "TRMT 2"
+  },
+  "SILVER ENTALINA": {
+   "manager": "SCORPIO",
+   "basis": "monthly",
+   "rate": 14166.66667,
+   "sheet": "TRMT 2"
+  },
+  "SILVER ETREMA": {
+   "manager": "SCORPIO",
+   "basis": "monthly",
+   "rate": 14166.66667,
+   "sheet": "TRMT 2"
+  },
+  "PACIFIC ANNA": {
+   "manager": "STASCO",
+   "basis": "monthly",
+   "rate": 7500.0,
+   "sheet": "TRMT 2"
+  },
+  "PACIFIC RAWAN": {
+   "manager": "STASCO",
+   "basis": "monthly",
+   "rate": 7500.0,
+   "sheet": "TRMT 2"
+  },
+  "BLUEGRASS MARINER": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 8000.0,
+   "sheet": "TRMT 2"
+  },
+  "REDWOOD MARINER": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 8000.0,
+   "sheet": "TRMT 2"
+  },
+  "EVERGREEN MARINER": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 8000.0,
+   "sheet": "TRMT 2"
+  },
+  "PELICAN MARINER": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 8000.0,
+   "sheet": "TRMT 2"
+  },
+  "FRONTIER MARINER": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 8000.0,
+   "sheet": "TRMT 2"
+  },
+  "LONE STAR MARINER": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 8000.0,
+   "sheet": "TRMT 2"
+  },
+  "MADAGASCAR PROSPERITY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 12000.0,
+   "sheet": "TRMT 2"
+  },
+  "MORNING GLORY": {
+   "manager": "VSN",
+   "basis": "monthly",
+   "rate": 14254.42,
+   "sheet": "TRMT 2"
+  },
+  "MIDNIGHT GLORY": {
+   "manager": "VSN",
+   "basis": "monthly",
+   "rate": 14254.42,
+   "sheet": "TRMT 2"
+  },
+  "SUNRISE GLORY": {
+   "manager": "VSN",
+   "basis": "monthly",
+   "rate": 14254.42,
+   "sheet": "TRMT 2"
+  },
+  "COSMIC GLORY": {
+   "manager": "VSN",
+   "basis": "monthly",
+   "rate": 14254.42,
+   "sheet": "TRMT 2"
+  },
+  "PLATA SOUTH": {
+   "manager": "VSN",
+   "basis": "monthly",
+   "rate": 10500.0,
+   "sheet": "TRMT 2"
+  },
+  "PLATA GLORY": {
+   "manager": "VSN",
+   "basis": "monthly",
+   "rate": 10500.0,
+   "sheet": "TRMT 2"
+  },
+  "PLATA NORTH": {
+   "manager": "VSN",
+   "basis": "monthly",
+   "rate": 10500.0,
+   "sheet": "TRMT 2"
+  },
+  "LUCKY PIONEER": {
+   "manager": "VSU",
+   "basis": "monthly",
+   "rate": 9583.33,
+   "sheet": "TRMT 2"
+  },
+  "LUCKY CARRIER": {
+   "manager": "VSU",
+   "basis": "monthly",
+   "rate": 9583.33,
+   "sheet": "TRMT 2"
+  },
+  "ROBERTA B": {
+   "manager": "VSU",
+   "basis": "monthly",
+   "rate": 9000.0,
+   "sheet": "TRMT 2"
+  },
+  "ANGOLA B": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 3"
+  },
+  "GHANA PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 3"
+  },
+  "GREECE PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 3"
+  },
+  "GUYANA PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 3"
+  },
+  "INDONESIA PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 3"
+  },
+  "KUWAIT PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 3"
+  },
+  "SOUTH AFRICA PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 3"
+  },
+  "SPAIN B": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 3"
+  },
+  "VIETNAM PROSPERITY": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 3"
+  },
+  "BELGIUM B": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 255.0,
+   "sheet": "TRMT 3"
+  },
+  "ATLANTIC BRIDGE": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "ATLANTIC EAST": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "ATLANTIC EXPRESS": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "ATLANTIC GENEVA": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "ATLANTIC GREEN": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "ATLANTIC MERCHANT": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "ATLANTIC MONACO": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "ATLANTIC NORTH": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "ATLANTIC PIONEER": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "ATLANTIC SOUTH": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "PACIFIC BEIJING": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "PACIFIC DALIAN": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "PACIFIC MONACO": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "PACIFIC QINGDAO": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "PACIFIC SHENZHEN": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "PACIFIC SINGAPORE": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "PACIFIC TIANJIN": {
+   "manager": "CSM",
+   "basis": "daily",
+   "rate": 204.0,
+   "sheet": "TRMT 3"
+  },
+  "BRAZIL PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 3"
+  },
+  "COLOMBIA PROSPERITY": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 3"
+  },
+  "MOZAMBIQUE B": {
+   "manager": "FLEET",
+   "basis": "monthly",
+   "rate": 7750.0,
+   "sheet": "TRMT 3"
+  },
+  "ARGENTINA B": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 3"
+  },
+  "BAHRAIN PROSPERITY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 3"
+  },
+  "BASRAH ENERGY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 3"
+  },
+  "CYPRUS PROSPERITY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 3"
+  },
+  "MOMBASA B": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 3"
+  },
+  "ESTONIA PROSPERITY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 3"
+  },
+  "PALAU PROSPERITY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 3"
+  },
+  "PERU PROSPERITY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 3"
+  },
+  "PORTUGAL PROSPERITY": {
+   "manager": "SYNERGY",
+   "basis": "monthly",
+   "rate": 13000.0,
+   "sheet": "TRMT 3"
+  },
+  "DUBAI ENERGY": {
+   "manager": "TSM",
+   "basis": "monthly",
+   "rate": 14583.33,
+   "sheet": "TRMT 3"
+  },
+  "SAMOA PROSPERITY": {
+   "manager": "EXECUTIVE",
+   "basis": "monthly",
+   "rate": 12000.0,
+   "sheet": "TRMT 3"
+  },
+  "FREEDOM GLORY": {
+   "manager": "VSN",
+   "basis": "monthly",
+   "rate": 14254.42,
+   "sheet": "TRMT 3"
+  },
+  "MARITIME GLORY": {
+   "manager": "VSN",
+   "basis": "monthly",
+   "rate": 14254.42,
+   "sheet": "TRMT 3"
+  }
+ }
+}
