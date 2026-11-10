@@ -13,6 +13,9 @@
 
 
 
+
+
+
 import os, re, sys
 from svms import login, select, save
 
@@ -77,7 +80,7 @@ def is_nrc_text(txt):
 
 FX_OVER = 1.20
 FX_REMARK_PREFIX = "FX over-charged"
-OWN_PREFIXES = (OPR_REMARK_PREFIX, FX_REMARK_PREFIX, MF_REMARK_PREFIX, NRC_REMARK)
+OWN_PREFIXES = (OPR_REMARK_PREFIX, FX_REMARK_PREFIX, MF_REMARK_PREFIX, NRC_REMARK, "Duplicate invoice")
 
 
 def fx_remark(cur, amt, usd, rate, src):
@@ -94,8 +97,8 @@ def _num(v):
 
 
 REMARK_MAX = 240
-_ORDER = {"D": 0, "A": 1, "C": 2, "B": 3}
-_TAGNAME = {"D": "NRC invoice", "A": "Operational AOR", "C": "Mgmt fee over SMA", "B": "FX over-charged"}
+_ORDER = {"D": 0, "E": 1, "A": 2, "C": 3, "B": 4}
+_TAGNAME = {"D": "NRC invoice", "E": "Duplicate invoice", "A": "Operational AOR", "C": "Mgmt fee over SMA", "B": "FX over-charged"}
 
 
 def _short(tag, full):
@@ -105,10 +108,34 @@ def _short(tag, full):
     if tag == "B":
         m = re.search(r"(\w{3}) ([\d,.]+) -> USD ([\d,.]+).*?(\+[\d.]+%)", full)
         return f"FX over-charged {m.group(1)} {m.group(2)}->USD {m.group(3)} ({m.group(4)})" if m else "FX over-charged"
+    if tag == "E":
+        return full.replace("Duplicate invoice: ", "Duplicate invoice ")
     if tag == "C":
         m = re.search(r"charged USD ([\d,.]+) vs contract USD ([\d,.]+)", full)
         return f"Mgmt fee over SMA {m.group(1)} vs {m.group(2)}" if m else "Mgmt fee over SMA"
     return full
+
+
+DUP_REMARK_PREFIX = "Duplicate invoice"
+ENGINE_PREFIXES = ("Cost no match",)
+
+
+def dup_remark(sx, seq, inv):
+    return f"{DUP_REMARK_PREFIX}: {inv} = {sx} s{seq}"
+
+
+def _engine_remark(prev):
+    return prev.startswith(ENGINE_PREFIXES) or prev.startswith(OWN_PREFIXES)
+
+
+def append_remark(prev, new):
+    """기존 엔진 리마크 + ' | ' + 새 사유. 240자 넘으면 축약형 → 사유명. 그래도 넘으면 None(사람 확인)."""
+    fs = sorted(new, key=lambda x: _ORDER.get(x[0], 9))
+    for parts in ([r for _, r in fs], [_short(t, r) for t, r in fs], [_TAGNAME[t] for t, _ in fs]):
+        out = prev + " | " + " | ".join(parts)
+        if len(out) <= REMARK_MAX:
+            return out
+    return None
 
 
 def combine_remarks(findings):
@@ -124,7 +151,7 @@ def combine_remarks(findings):
     return " | ".join(_TAGNAME[t] for t, _ in fs)
 
 
-def judge_line(line, aor_lookup, sl_tp, fx_lookup=None, mf=None, nrc=None):
+def judge_line(line, aor_lookup, sl_tp, fx_lookup=None, mf=None, nrc=None, dup=None):
     """라인 1개 판정(순수). aor_lookup(aor_cd)->row|None / fx_lookup(cur)->(usd_per_unit, src)|None.
     returns (verdict, key, note, remark): verdict ∈ skip|pass|reject|already|resub|error"""
     findings, errors, checked = [], [], []
@@ -168,6 +195,11 @@ def judge_line(line, aor_lookup, sl_tp, fx_lookup=None, mf=None, nrc=None):
         checked.append("NRC")
         if nrc:
             findings.append(("D", NRC_REMARK))
+
+    if dup is not None:
+        checked.append("DUP")
+        if dup:
+            findings.append(("E", dup_remark(*dup)))
     key = " ".join(checked) or None
     if not checked:
         return "skip", None, "대상 아님", None
@@ -177,14 +209,21 @@ def judge_line(line, aor_lookup, sl_tp, fx_lookup=None, mf=None, nrc=None):
         return "pass", key, "정상", None
     tags = "+".join(t for t, _ in findings)
     rmk = combine_remarks(findings)
-    prev = str(line.get("RJT_RMK") or "")
-    if line.get("RJT_YN") == "Y" and prev.startswith(OWN_PREFIXES):
-        return "already", key, "이미 2차 리젝", None
+    prev = str(line.get("RJT_RMK") or "").strip()
     if line.get("STATUS2") == "Y" or (line.get("STATUS_RMK2") or "").strip():
         return "resub", key, f"[{tags}] 관리사 재상신/S·M 리마크 있음(보존, 사람 확인)", None
-    if line.get("RJT_YN") == "Y" or prev.strip():
-        return "already", key, f"[{tags}] 기존 리젝/리마크 있음(보존, 사람 확인)", None
-    return "reject", key, tags, rmk
+    if not prev and line.get("RJT_YN") != "Y":
+        return "reject", key, tags, rmk
+    if prev and _engine_remark(prev):
+
+        new = [(t, r) for t, r in findings if _TAGNAME[t] not in prev]
+        if not new:
+            return "already", key, "이미 같은 사유 기입됨", None
+        merged = append_remark(prev, new)
+        if merged is None:
+            return "already", key, f"[{tags}] 기존 리마크 + 새 사유가 240자 초과(보존, 사람 확인)", None
+        return "reject", key, f"{tags} (기존 리마크에 덧붙임)", merged
+    return "already", key, f"[{tags}] 사람/기타 리마크 있음(보존, 사람 확인)", None
 
 
 SNAP_KEYS = ("CFM_YN", "RJT_YN", "RJT_RMK", "STATUS2", "STATUS_RMK2", "REF_NO", "SOA_AMT", "SOA_CUR_CD", "AMT_USD",
@@ -315,6 +354,79 @@ def make_fx_lookup(dt=None):
     return lookup
 
 
+DUP_EXCLUDE_EXP = ("080101", "0601")
+try:
+    DUP_LOOKBACK_M = int(os.environ.get("SOA_DUP_LOOKBACK_MONTHS", "24"))
+except (TypeError, ValueError):
+    DUP_LOOKBACK_M = 24
+
+
+def norm_inv(s):
+    return re.sub(r"[^A-Z0-9]", "", str(s or "").upper())
+
+
+def _dup_excluded(exp_cd):
+    extra = tuple(x.strip() for x in os.environ.get("SOA_DUP_EXCLUDE_EXP", "").split(",") if x.strip())
+    return str(exp_cd or "").startswith(DUP_EXCLUDE_EXP + extra)
+
+
+def _amt_key(v):
+    from decimal import Decimal, InvalidOperation
+    try:
+        return str(Decimal(str(v).replace(",", "")).normalize())
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def dup_key(l):
+    """(정규화 번호, 통화, 금액) — Debit·번호 있음·제외코드 아님·금액 있음(0 제외). 아니면 None."""
+    inv = norm_inv(l.get("INV_NO"))
+    amt = _amt_key(l.get("SOA_AMT")) if l.get("SOA_AMT") not in (None, "") else None
+    if l.get("SOA_TP") != "D" or not inv or amt in (None, "0") or _dup_excluded(l.get("EXP_CD")):
+        return None
+    return (inv, str(l.get("SOA_CUR_CD") or "").upper(), amt)
+
+
+def _ym_shift(ym, months):
+    y, m = int(ym[:4]), int(ym[4:6]) - 1 + months
+    return f"{y + m // 12:04d}{m % 12 + 1:02d}"
+
+
+def build_dup_index(vsl, min_dm, max_dm):
+    """선박의 SOA 라인 이력 {dup_key: [(sx, seq, inv, sl_dm)]} — Draft 제외, 대상 기간 전체 ±LOOKBACK개월(SOA별 필터는 find_dup)."""
+    fm, to = _ym_shift(min_dm, -DUP_LOOKBACK_M), _ym_shift(max_dm, DUP_LOOKBACK_M)
+    hdr = select("PKG_CO_SLIP_EX", "SP_GET_SOA", {"VSL_CD": vsl, "FM_DM": fm, "TO_DM": to,
+                                                  "SOA_OW_COMP_ID": "", "VSL_STATUS": "1"}).get("P_RS", []) or []
+    idx = {}
+    for h in hdr:
+        sx = h.get("SX_CD") or ""
+        if sx[:4] != vsl or h.get("STATUS") == "D":
+            continue
+        for l in select("PKG_CO_SLIP_EX", "SP_GET_SOA_INFO", {"SX_CD": sx}).get("P_RS_D", []) or []:
+            k = dup_key(l)
+            if k:
+                idx.setdefault(k, []).append((sx, l.get("SX_SEQ"), str(l.get("INV_NO") or "").strip(), str(h.get("SL_DM") or "")))
+    return idx
+
+
+def _months_apart(a, b):
+    try:
+        return abs((int(a[:4]) * 12 + int(a[4:6])) - (int(b[:4]) * 12 + int(b[4:6])))
+    except (TypeError, ValueError):
+        return 10 ** 6
+
+
+def find_dup(idx, sx, l, sl_dm=None):
+    """이 라인보다 '먼저 만들어진' 다른 SOA에 같은 키가 있으면 그 원본 (sx, seq, inv). 없으면 False, 대상 아니면 None.
+    SOA 번호(선박+CX+yyMMdd+seq)의 생성순서로 판정 → 나중 SOA만 리젝, 원본은 안 건드림."""
+    k = dup_key(l)
+    if k is None:
+        return None
+    older = sorted(x for x in idx.get(k, []) if x[0] != sx and x[0][4:] < sx[4:]
+                   and (sl_dm is None or len(x) < 4 or _months_apart(x[3], sl_dm) <= DUP_LOOKBACK_M))
+    return tuple(older[0][:3]) if older else False
+
+
 NRC_SCAN = os.environ.get("SOA_STAGE2_NRC", "1") == "1"
 
 
@@ -392,7 +504,7 @@ def run(vsl):
         warns.append(f"관리비 계약표에 '{vname or vsl}' 없음 → C 미검사")
 
     print(f"=== SOA 2차 검증 [{vsl}] {'VERIFY(리젝체크+리마크 실기입)' if VERIFY else 'DRY(0 write)'} ===")
-    print(f"   SL_TP={SL_TP}({DEPT_LABEL[SL_TP]}) · SL_DM {FM_DM}~{TO_DM} · STATUS=S · 항목: A.Operational AOR · B.외화 환율(≥120%) · C.관리비 SMA · D.NRC\n")
+    print(f"   SL_TP={SL_TP}({DEPT_LABEL[SL_TP]}) · SL_DM {FM_DM}~{TO_DM} · STATUS=S · 항목: A.Operational AOR · B.외화 환율(≥120%) · C.관리비 SMA · D.NRC · E.중복 인보이스\n")
     hdr = select("PKG_CO_SLIP_EX", "SP_GET_SOA",
                  {"VSL_CD": vsl, "FM_DM": FM_DM, "TO_DM": TO_DM, "SOA_OW_COMP_ID": "", "VSL_STATUS": "1"})
     rows = [r for r in (hdr.get("P_RS", []) or [])
@@ -403,6 +515,7 @@ def run(vsl):
 
     n = {"aor": 0, "pass": 0, "reject": 0, "already": 0, "resub": 0, "error": 0, "written": 0, "wfail": 0}
     todo = []
+    dup_idx = None
 
     for r in sorted(rows, key=lambda x: x.get("SL_DM") or ""):
         sx = r.get("SX_CD")
@@ -419,9 +532,16 @@ def run(vsl):
                 charged = sum(_num(l.get("AMT_USD")) or 0 for l in fee_lines)
                 mf = (exp_usd, charged, desc)
                 print(f"    관리비: 청구 USD {charged:,.2f} / 계약 USD {exp_usd:,.2f} ({desc})")
+        if dup_idx is None:
+            try:
+                dms = sorted(str(x.get("SL_DM") or FM_DM) for x in rows)
+                dup_idx = build_dup_index(vsl, dms[0], dms[-1])
+            except BaseException as e:
+                dup_idx = {}; warns.append(f"중복 인보이스 이력 조회 실패 → E 미검사: {str(e)[:40]}")
         for l in lines:
             nrc = nrc_scan(sx, l, warns) if NRC_SCAN else None
-            verdict, aor, note, rmk = judge_line(l, aor_lookup, SL_TP, fx_lookup, mf, nrc)
+            dup = find_dup(dup_idx, sx, l, str(r.get("SL_DM") or "")) if dup_idx else None
+            verdict, aor, note, rmk = judge_line(l, aor_lookup, SL_TP, fx_lookup, mf, nrc, dup)
             if verdict == "skip":
                 continue
             n["aor"] += 1; n[verdict] += 1

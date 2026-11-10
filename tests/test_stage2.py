@@ -31,8 +31,12 @@ class T(unittest.TestCase):
         self.assertEqual(S2.judge_line({"REF_NO": "XXXXCA2609010001"}, lk, "05")[0], "error")
 
     def test_existing_reject_not_overwritten(self):
-        l = {"REF_NO": "ABCDCA2609010001", "RJT_YN": "Y", "RJT_RMK": "Cost no match"}
-        self.assertEqual(S2.judge_line(l, lk, "05")[0], "already")
+        l = {"REF_NO": "ABCDCA2609010001", "RJT_YN": "Y", "RJT_RMK": "Cost no match - Amount: SOA USD 1 / Invoice 2"}
+        v, _, _, r = S2.judge_line(l, lk, "05")                       # 1차 엔진 리마크 → 덧붙임
+        self.assertEqual(v, "reject")
+        self.assertTrue(r.startswith("Cost no match - Amount: SOA USD 1 / Invoice 2 | Operational AOR: ABCDCA2609010001"))
+        self.assertEqual(S2.judge_line({**l, "RJT_RMK": r}, lk, "05")[0], "already")   # 같은 사유 재기입 안 함
+        self.assertEqual(S2.judge_line({**l, "RJT_RMK": "pls check with master"}, lk, "05")[0], "already")  # 사람 리마크 보존
         l2 = {**l, "STATUS2": "Y", "STATUS_RMK2": "fixed"}
         self.assertEqual(S2.judge_line(l2, lk, "05")[0], "resub")
 
@@ -282,6 +286,38 @@ class T(unittest.TestCase):
         S2.save = save_and_tamper
         S2.run("TEST")
         self.assertEqual([p["SX_SEQ"] for p in st["saves"]], [1])   # 2번 라인은 스킵
+
+    def test_dup_key_and_find(self):
+        base = {"SOA_TP": "D", "SOA_CUR_CD": "SGD", "SOA_AMT": 552.6, "EXP_CD": "070101"}
+        self.assertEqual(S2.dup_key({**base, "INV_NO": "TI2566393."}), ("TI2566393", "SGD", "552.6"))
+        self.assertIsNone(S2.dup_key({**base, "INV_NO": "TI2566393", "SOA_TP": "A"}))        # Asset 정산 라인 제외
+        self.assertIsNone(S2.dup_key({**base, "INV_NO": "STAC-000626", "EXP_CD": "080101"})) # 관리비 제외
+        self.assertIsNone(S2.dup_key({**base, "INV_NO": "X1", "EXP_CD": "060102"}))           # 통신비 제외
+        self.assertEqual(S2.dup_key({**base, "INV_NO": "A1", "SOA_AMT": -5.125})[2], "-5.125")  # 짧은 번호·음수·3자리 소수도 원값 그대로
+        idx = {("TI2566393", "SGD", "552.6"): [("TSTA-2610010002", "0048", "TI2566393", "202609"), ("TSTA-2611100001", "0002", "TI2566393.", "202601")]}
+        newer = {**base, "INV_NO": "TI2566393.", "SX_SEQ": "0002"}
+        self.assertEqual(S2.find_dup(idx, "TSTA-2611100001", newer), ("TSTA-2610010002", "0048", "TI2566393"))
+        self.assertFalse(S2.find_dup(idx, "TSTA-2610010002", {**base, "INV_NO": "TI2566393"}))   # 원본은 안 걸림
+        self.assertFalse(S2.find_dup(idx, "TSTA-2611100001", {**base, "INV_NO": "TI2566393", "SOA_AMT": 552.61}))
+        self.assertFalse(S2.find_dup(idx, "TSTA-2611100001", newer, "202310"))   # 원본이 ±24개월 밖이면 제외
+        self.assertTrue(S2.find_dup(idx, "TSTA-2611100001", newer, "202601"))
+
+    def test_dup_short_form_idempotent(self):
+        prev = "Cost no match - " + "x" * 150
+        r = S2.append_remark(prev, [("E", "Duplicate invoice: " + "9" * 40 + " = TSTA-2610010002 s0048"), ("A", "Operational AOR: ABCDCA2609010001 (Dept: Operational) - not chargeable")])
+        self.assertIsNotNone(r); self.assertLessEqual(len(r), 240)
+        l = {"SOA_CUR_CD": "USD", "RJT_YN": "Y", "RJT_RMK": r, "REF_NO": "ABCDCA2609010001"}
+        self.assertEqual(S2.judge_line(l, lk, "05", None, None, None, ("TSTA-2610010002", "0048", "9" * 40))[0], "already")
+
+    def test_dup_judge_and_append(self):
+        l = {"SOA_CUR_CD": "USD", "RJT_YN": "Y", "RJT_RMK": "Cost no match - Amount: SOA USD 1,900 / Invoice 1575"}
+        v, _, tags, r = S2.judge_line(l, lk, "05", None, None, True, ("TSTA-2602020002", "0012", "201549"))
+        self.assertEqual((v, tags), ("reject", "D+E (기존 리마크에 덧붙임)"))
+        self.assertEqual(r, "Cost no match - Amount: SOA USD 1,900 / Invoice 1575 | NRC invoice | Duplicate invoice: 201549 = TSTA-2602020002 s0012")
+
+    def test_append_overflow_preserves(self):
+        prev = "Cost no match - " + "x" * 225
+        self.assertIsNone(S2.append_remark(prev, [("A", "Operational AOR: ABCDCA2609010001 (...)")]))
 
     def test_remark(self):
         r = S2.operational_remark("ABCDCA2609010001", "04")
