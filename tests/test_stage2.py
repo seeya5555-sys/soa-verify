@@ -319,6 +319,23 @@ class T(unittest.TestCase):
         prev = "Cost no match - " + "x" * 225
         self.assertIsNone(S2.append_remark(prev, [("A", "Operational AOR: ABCDCA2609010001 (...)")]))
 
+    def test_fund_request_dup(self):
+        base = {"SOA_TP": "D", "SOA_CUR_CD": "USD", "SOA_AMT": 2100, "EXP_CD": "021408", "INV_NO": "26/11/03692.", "SOA_OPEX_TP": "A"}
+        fr = {"OPEX_CD": "TSTCO2610070010", "INV_NO": "26/11/03692", "AMT": 2100, "CUR_CD": "USD", "STATUS": "P", "REF_NO": None, "REQ_DT": "20261007"}
+        fidx = {("26110369" + "2", "USD", "2100"): [fr]}
+        self.assertEqual(S2.find_fund_dup(fidx, {**base, "REF_NO": "TSTCA2609280001"}), ("TSTCO2610070010", None, "26/11/03692"))
+        same_aor = {**fr, "REF_NO": "TSTCA2609280001"}
+        self.assertFalse(S2.find_fund_dup({k: [same_aor] for k in fidx}, {**base, "REF_NO": "TSTCA2609280001"}))   # 같은 AOR = 정상
+        self.assertFalse(S2.find_fund_dup(fidx, {**base, "REF_NO": "TSTCO2610070010"}))      # 라인이 그 비용청구 번호 참조
+        self.assertFalse(S2.find_fund_dup(fidx, {**base, "REF_NO": " TSTCO261007001"}))      # 앞부분 일치(잘린 번호)
+        self.assertFalse(S2.find_fund_dup(fidx, {**base, "REF_NO": None}))                    # AOR 라인 REF 미기재 = 판단불가
+        self.assertEqual(S2.find_fund_dup(fidx, {**base, "REF_NO": None, "SOA_OPEX_TP": "O"})[0], "TSTCO2610070010")
+        line = {**base, "REF_NO": "TSTCA2609280001"}
+        self.assertTrue(S2.find_fund_dup(fidx, line, "202810"))      # 24개월 경계 안
+        self.assertFalse(S2.find_fund_dup(fidx, line, "202811"))     # 25개월 = 범위 밖
+        self.assertFalse(S2.find_fund_dup({k: [{**fr, "REQ_DT": None}] for k in fidx}, line, "202601"))  # 날짜 없음 = 제외
+        self.assertEqual(S2.dup_remark("TSTCO2610070010", None, "26/11/03692"), "Duplicate invoice: 26/11/03692 = Fund Request TSTCO2610070010")
+
     def test_remark(self):
         r = S2.operational_remark("ABCDCA2609010001", "04")
         self.assertTrue(r.startswith("Operational AOR: ABCDCA2609010001"))

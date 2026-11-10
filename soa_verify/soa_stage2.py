@@ -16,6 +16,8 @@
 
 
 
+
+
 import os, re, sys
 from svms import login, select, save
 
@@ -121,6 +123,8 @@ ENGINE_PREFIXES = ("Cost no match",)
 
 
 def dup_remark(sx, seq, inv):
+    if seq is None:
+        return f"{DUP_REMARK_PREFIX}: {inv} = Fund Request {sx}"
     return f"{DUP_REMARK_PREFIX}: {inv} = {sx} s{seq}"
 
 
@@ -373,7 +377,7 @@ def _dup_excluded(exp_cd):
 def _amt_key(v):
     from decimal import Decimal, InvalidOperation
     try:
-        return str(Decimal(str(v).replace(",", "")).normalize())
+        return format(Decimal(str(v).replace(",", "")).normalize(), "f")
     except (InvalidOperation, ValueError):
         return None
 
@@ -407,6 +411,46 @@ def build_dup_index(vsl, min_dm, max_dm):
             if k:
                 idx.setdefault(k, []).append((sx, l.get("SX_SEQ"), str(l.get("INV_NO") or "").strip(), str(h.get("SL_DM") or "")))
     return idx
+
+
+def build_fund_index(vsl, min_dm, max_dm):
+    """선박 비용청구(Fund Request) {(번호, 통화, 금액): [row]} — Draft·Reject 제외, 대상 기간 ±LOOKBACK개월."""
+    fm, to = _ym_shift(min_dm, -DUP_LOOKBACK_M), _ym_shift(max_dm, DUP_LOOKBACK_M)
+    rows = select("PKG_CO_OPEX", "SP_GET_OPEX", {"FM_DT": fm + "01", "TO_DT": to + "31", "VSL_CD": vsl}).get("P_RS", []) or []
+    idx = {}
+    for r in rows:
+        if str(r.get("STATUS") or "") in ("D", "R"):
+            continue
+        inv = norm_inv(r.get("INV_NO"))
+        amt = _amt_key(r.get("AMT")) if r.get("AMT") not in (None, "") else None
+        if inv and amt not in (None, "0"):
+            idx.setdefault((inv, str(r.get("CUR_CD") or "").upper(), amt), []).append(r)
+    return idx
+
+
+def _ref(v):
+    return re.sub(r"[^A-Z0-9]", "", str(v or "").upper())
+
+
+def find_fund_dup(fidx, l, sl_dm=None):
+    """SOA 라인이 같은 선박 비용청구로 이미 지급된 인보이스면 (OPEX_CD, None, inv). 아니면 False/None.
+    정상 정산 예외(11-10 백테스트 4척 0오탐): ①라인 REF_NO가 그 비용청구의 AOR(REF_NO/AOR_CD)과 같음
+    ②라인 REF_NO가 그 비용청구 번호(OPEX_CD) 자체(앞부분 일치 포함) ③AOR 라인인데 REF_NO 미기재(구데이터·판단불가)."""
+    k = dup_key(l)
+    if k is None or not fidx:
+        return None
+    lref = _ref(l.get("REF_NO"))
+    if not lref and l.get("SOA_OPEX_TP") == "A":
+        return False
+    for r in fidx.get(k, []):
+        fdm = str(r.get("REQ_DT") or r.get("OPEX_DT") or r.get("INV_DT") or "")[:6]
+        if sl_dm and (len(fdm) < 6 or _months_apart(fdm, sl_dm) > DUP_LOOKBACK_M):
+            continue
+        fa, fo = _ref(r.get("REF_NO") or r.get("AOR_CD")), _ref(r.get("OPEX_CD"))
+        if lref and ((fa and lref == fa) or (fo and (lref == fo or (len(lref) >= 12 and fo.startswith(lref))))):
+            continue
+        return (str(r.get("OPEX_CD") or ""), None, str(r.get("INV_NO") or "").strip())
+    return False
 
 
 def _months_apart(a, b):
@@ -516,6 +560,7 @@ def run(vsl):
     n = {"aor": 0, "pass": 0, "reject": 0, "already": 0, "resub": 0, "error": 0, "written": 0, "wfail": 0}
     todo = []
     dup_idx = None
+    fund_idx = {}
 
     for r in sorted(rows, key=lambda x: x.get("SL_DM") or ""):
         sx = r.get("SX_CD")
@@ -533,14 +578,21 @@ def run(vsl):
                 mf = (exp_usd, charged, desc)
                 print(f"    관리비: 청구 USD {charged:,.2f} / 계약 USD {exp_usd:,.2f} ({desc})")
         if dup_idx is None:
+            dms = sorted(str(x.get("SL_DM") or FM_DM) for x in rows)
             try:
-                dms = sorted(str(x.get("SL_DM") or FM_DM) for x in rows)
                 dup_idx = build_dup_index(vsl, dms[0], dms[-1])
             except BaseException as e:
-                dup_idx = {}; warns.append(f"중복 인보이스 이력 조회 실패 → E 미검사: {str(e)[:40]}")
+                dup_idx = {}; warns.append(f"중복 인보이스 SOA 이력 조회 실패 → E(SOA) 미검사: {str(e)[:40]}")
+            try:
+                fund_idx = build_fund_index(vsl, dms[0], dms[-1])
+            except BaseException as e:
+                fund_idx = {}; warns.append(f"비용청구 조회 실패 → E(비용청구) 미검사: {str(e)[:40]}")
         for l in lines:
             nrc = nrc_scan(sx, l, warns) if NRC_SCAN else None
             dup = find_dup(dup_idx, sx, l, str(r.get("SL_DM") or "")) if dup_idx else None
+            if not dup:
+                fdup = find_fund_dup(fund_idx, l, str(r.get("SL_DM") or ""))
+                dup = fdup if fdup else (dup if dup is not None else fdup)
             verdict, aor, note, rmk = judge_line(l, aor_lookup, SL_TP, fx_lookup, mf, nrc, dup)
             if verdict == "skip":
                 continue
