@@ -18,7 +18,10 @@ brew install poppler tesseract
 git clone https://github.com/seeya5555-sys/soa-verify && cd soa-verify
 python3 -m unittest discover -s tests      # selftest (네트워크·AI 호출 없음)
 python3 -m soa_verify setup                # SVMS 아이디/비번 → ~/.soa-verify/config.json (권한 600, 업로드 안 함)
+python3 -m soa_verify doctor               # 환경 점검: Python·poppler·tesseract·claude·SVMS 로그인 (기입 없음)
 ```
+- `doctor`가 `=== ready ===`를 내면 준비 끝입니다. poppler·tesseract·claude 중 하나라도 없으면 `verify`/`stage2`는 **실행 자체를 멈춥니다**(인보이스 본문을 못 읽은 채로 정상 라인이 리젝 후보로 나오는 것을 막기 위함).
+- 기간(`--from/--to`)을 생략하면 **올해 1월~12월**입니다.
 
 ## 사용
 ```bash
@@ -60,6 +63,9 @@ app.register_blueprint(create_blueprint(), url_prefix="/soa-verify")   # 반드�
 - SVMS 아이디/비밀번호는 페이지에서 처음 한 번 입력하면 서버 PC에 저장(`~/.soa-verify/config.json`, 권한 600)
 - 판정 모델은 Haiku 5.5 고정(선택 없음). 서버 PC에 `claude` CLI가 로그인돼 있어야 합니다.
 - 이 블루프린트 자체에는 로그인 기능이 없습니다. 내 사이트 인증 아래에 마운트하세요.
+- 저장소 폴더가 내 사이트의 import 경로에 있어야 합니다. 다른 위치에 받았다면 앱 시작 부분에 `sys.path.insert(0, "/받은/경로/soa-verify")` 한 줄을 넣으세요. 실행 로그·잠금 파일은 그 폴더의 `_cache/`에 생기므로 쓰기 권한이 필요합니다.
+- 웹 서버를 돌리는 계정의 PATH에 poppler·tesseract·claude가 있어야 합니다(서비스로 띄우면 PATH가 터미널과 다를 수 있음 — 그 계정으로 `python3 -m soa_verify doctor` 확인).
+- 실행은 한 번에 하나만 됩니다(파일 잠금 — 워커가 여러 개여도 동일). Windows 잠금 경로는 실제 Windows에서 시험하지 못했습니다(WSL 권장).
 
 ## 리젝 리마크 형식
 `Cost no match - Amount: SOA USD 164.41 / Invoice 109.71 | Invoice No.: SOA INV-123 - not found on invoice`

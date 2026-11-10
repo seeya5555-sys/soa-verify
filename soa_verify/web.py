@@ -8,7 +8,14 @@ SVMS id/password are entered once on the page and stored locally (~/.soa-verify/
 The model is fixed (Claude Haiku 5.5 via your local `claude` CLI). No approval / slip / mail here, by design.
 This blueprint has NO authentication of its own — mount it behind your site's login.
 """
-import fcntl, json, os, re, subprocess, sys, threading, time
+import json, os, re, subprocess, sys, threading, time
+
+try:
+    import fcntl          # Unix: flock 으로 워커(프로세스) 간 동시 실행 차단
+    msvcrt = None
+except ImportError:       # Windows: msvcrt 파일 잠금으로 같은 역할
+    fcntl = None
+    import msvcrt
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -41,21 +48,40 @@ def build_cmd(action, vessels, fm, to, dept):
 
 
 def _try_lock():
+    """Cross-process run lock. Returns an open fd holding the lock, or None when another run holds it."""
     os.makedirs(os.path.dirname(LOCKFILE), exist_ok=True)
     fd = os.open(LOCKFILE, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        else:
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)      # 첫 1바이트 비대기 잠금(다른 프로세스가 잡고 있으면 OSError)
         return fd
     except OSError:
         os.close(fd)
         return None
 
 
+def _unlock(fd):
+    try:
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        else:
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    finally:
+        os.close(fd)
+
+
 def _run(cmd, lock_fd):
     try:
         _run_inner(cmd)
+    except Exception as e:          # e.g. log file not writable — never leave the page stuck on "running"
+        with _LOCK:
+            _STATE.update(running=False, rc=f"error: {type(e).__name__}")
     finally:
-        fcntl.flock(lock_fd, fcntl.LOCK_UN); os.close(lock_fd)
+        _unlock(lock_fd)
 
 
 def _run_inner(cmd):
@@ -157,7 +183,7 @@ def create_blueprint(name="soa_verify"):
             log = ""
         fd = _try_lock()   # 다른 워커가 실행 중이면 잠금 실패 = running
         if fd is not None:
-            fcntl.flock(fd, fcntl.LOCK_UN); os.close(fd)
+            _unlock(fd)
         with _LOCK:
             return jsonify(running=_STATE["running"] or fd is None, rc=_STATE["rc"], log=log)
 

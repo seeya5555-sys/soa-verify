@@ -87,7 +87,8 @@ class WebSafety(unittest.TestCase):
         from soa_verify import web
         a = web._try_lock(); self.assertIsNotNone(a)
         self.assertIsNone(web._try_lock())          # second holder refused
-        import fcntl; fcntl.flock(a, fcntl.LOCK_UN); os.close(a)
+        web._unlock(a)
+        b = web._try_lock(); self.assertIsNotNone(b); web._unlock(b)   # released → can be taken again
 
 
 class ScopeGuards(unittest.TestCase):

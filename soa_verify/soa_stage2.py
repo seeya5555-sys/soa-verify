@@ -244,6 +244,12 @@ def _soa_fp(hdr_row, lines):
             tuple(sorted(_snap(x) for x in lines)))
 
 
+def lines_fp(lines):
+    """SOA 라인 전체 지문(sha256). 자동승인 게이트가 '2차 검증 때와 승인 직전의 라인이 같은지' 대조하는 데 씀."""
+    import hashlib
+    return hashlib.sha256(repr(tuple(sorted(_snap(x) for x in lines))).encode()).hexdigest()
+
+
 def _fp_excl(lines, seq):
     return tuple(sorted(_snap(x) for x in lines if str(x.get("SX_SEQ")) != str(seq)))
 
@@ -524,6 +530,19 @@ def reject_line(sx, seq, rmk):
                  "RJT_RMK": rmk[:240], "STATUS2": "N", "STATUS_RMK2": None})
 
 
+def _write_result(res):
+    """SOA_STAGE2_RESULT_JSON 지정 시 기계용 결과 기록(그룹 자동승인 게이트용). 기록 실패는 본 흐름에 영향 없음."""
+    path = os.environ.get("SOA_STAGE2_RESULT_JSON")
+    if not path:
+        return
+    try:
+        import json
+        with open(path, "w") as f:
+            json.dump(res, f)
+    except OSError as e:
+        print(f"    🚨 결과파일 기록 실패: {e}")
+
+
 def run(vsl):
     if SL_TP not in DEPT_LABEL:
         print(f"🚨 SL_TP={SL_TP} 불가(04/05만)"); return 2
@@ -554,8 +573,11 @@ def run(vsl):
     rows = [r for r in (hdr.get("P_RS", []) or [])
             if (r.get("SX_CD") or "")[:4] == vsl and r.get("SL_TP") == SL_TP
             and r.get("STATUS") == "S" and FM_DM <= (r.get("SL_DM") or "") <= TO_DM]
+
+    res = {"vsl": vsl, "sl_tp": SL_TP, "checked": [], "findings": {}, "fp": {}, "warns": warns, "errors": 0, "wfail": 0, "complete": False}
     if not rows:
-        print(f"검토대상 없음 (SL_TP={SL_TP} Submitted {FM_DM}~{TO_DM})."); return 0
+        print(f"검토대상 없음 (SL_TP={SL_TP} Submitted {FM_DM}~{TO_DM}).")
+        res["complete"] = True; _write_result(res); return 0
 
     n = {"aor": 0, "pass": 0, "reject": 0, "already": 0, "resub": 0, "error": 0, "written": 0, "wfail": 0}
     todo = []
@@ -567,6 +589,7 @@ def run(vsl):
         lines = select("PKG_CO_SLIP_EX", "SP_GET_SOA_INFO", {"SX_CD": sx}).get("P_RS_D", []) or []
         print(f"── {sx} ({r.get('SL_DM')}) | 라인 {len(lines)} ──")
         soa_fp = _soa_fp(r, lines)
+        res["fp"][sx] = lines_fp(lines)
         mf = None
         fee_lines = [l for l in lines if str(l.get("EXP_CD") or "") == MF_EXP_CD]
         if mf_rec and fee_lines:
@@ -599,6 +622,7 @@ def run(vsl):
             n["aor"] += 1; n[verdict] += 1
             if verdict == "pass":
                 continue
+            res["findings"].setdefault(sx, []).append(str(l.get("SX_SEQ")))
             tag = {"reject": "🟥리젝대상", "already": "↩기리젝", "resub": "↩재상신", "error": "🚨확인필요"}[verdict]
             print(f"    s{l.get('SX_SEQ'):<4} [{l.get('SOA_CUR_CD')}{l.get('SOA_AMT')}] {aor} → {tag} ({note})")
             if verdict == "reject":
@@ -609,6 +633,7 @@ def run(vsl):
                     except BaseException:
                         ffp = "ERR"
                 todo.append((sx, l.get("SX_SEQ"), rmk, soa_fp, ffp, l))
+        res["checked"].append(sx)
     print()
 
     if VERIFY and n["error"]:
@@ -657,6 +682,7 @@ def run(vsl):
     for w in warns:
         print(f"    ⚠️ {w}")
     print("    ⚠️ Approval·출금 Slip·리젝 제출·관리사 메일 = 미실행")
+    res.update(errors=n["error"], wfail=n["wfail"], complete=True); _write_result(res)
     return 1 if (n["error"] or n["wfail"]) else 0
 
 if __name__ == "__main__":

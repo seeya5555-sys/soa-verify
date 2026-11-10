@@ -70,6 +70,57 @@ def cmd_owners(_a):
             print(f"   - {x}")
 
 
+TOOLS = {   # 판정에 필요한 외부 프로그램. 없으면 본문을 못 읽어 정상 라인이 전부 리젝 후보로 나오므로 실행 전에 막는다.
+    "pdftotext": "poppler (macOS: brew install poppler / Ubuntu: apt install poppler-utils)",
+    "pdftoppm": "poppler (macOS: brew install poppler / Ubuntu: apt install poppler-utils)",
+    "tesseract": "tesseract (macOS: brew install tesseract / Ubuntu: apt install tesseract-ocr)",
+    "claude": "Claude Code CLI — install, then run `claude` once and log in",
+}
+
+
+def missing_tools(need=("pdftotext", "pdftoppm", "tesseract", "claude")):
+    import shutil
+    return [t for t in need if not shutil.which(t)]
+
+
+def preflight(need):
+    """Stop before any SVMS call when a required program is missing (SOA_VERIFY_SKIP_PREFLIGHT=1 to bypass, tests only)."""
+    if os.environ.get("SOA_VERIFY_SKIP_PREFLIGHT") == "1":
+        return
+    miss = missing_tools(need)
+    if miss:
+        lines = [f"  - {t}: {TOOLS[t]}" for t in miss]
+        raise SystemExit("required program(s) not found on PATH — nothing was run:\n" + "\n".join(lines)
+                         + "\nRun `python3 -m soa_verify doctor` to re-check.")
+
+
+def cmd_doctor(_a):
+    """Environment check: Python, external programs, credentials, SVMS login, My Vessel. Writes nothing to SVMS."""
+    ok = True
+    v = sys.version_info
+    good = v >= (3, 10); ok &= good
+    print(f"[{'ok' if good else 'NG'}] Python {v.major}.{v.minor} (need 3.10+)")
+    miss = set(missing_tools())
+    for t, how in TOOLS.items():
+        ok &= t not in miss
+        print(f"[{'NG' if t in miss else 'ok'}] {t}" + (f" — install: {how}" if t in miss else ""))
+    has_cred = bool(svms.USER_ID and (os.environ.get("SVMS_PASS") or svms._C.get("svms_pass")))
+    ok &= has_cred
+    print(f"[{'ok' if has_cred else 'NG'}] SVMS credentials" + ("" if has_cred else " — run `python3 -m soa_verify setup`"))
+    if has_cred:
+        try:
+            svms.login()
+            n = len(my_vessels())
+            ok &= n > 0
+            print(f"[{'ok' if n else 'NG'}] SVMS login · My Vessel {n} vessel(s)")
+        except (Exception, SystemExit) as e:
+            ok = False
+            print(f"[NG] SVMS login/My Vessel — {str(e)[:100]}")
+    print("=== ready ===" if ok else "=== not ready — fix the NG items above ===")
+    if not ok:
+        raise SystemExit(1)
+
+
 def _remark_ok(res):
     # strict: only a dict response without error counts as saved
     return isinstance(res, dict) and bool(res) and not res.get("error") \
@@ -77,6 +128,7 @@ def _remark_ok(res):
 
 
 def cmd_verify(a):
+    preflight(("pdftotext", "pdftoppm", "tesseract", "claude"))
     svms.login()
     vs = my_vessels()
     if not vs:
@@ -214,6 +266,7 @@ def cmd_cleanup(a):
 def cmd_stage2(a):
     """2차 검증: Operational AOR · 외화 환율(≥120%) · 관리비 SMA · NRC → 리젝 체크 + 리마크. 승인·제출·메일 없음."""
     import soa_stage2 as S2
+    preflight(("pdftotext", "pdftoppm", "tesseract"))   # NRC 인보이스 판독용(2차는 AI 호출 없음)
     svms.login()
     vs = my_vessels()
     if not vs:
@@ -238,38 +291,53 @@ def cmd_setup(_a):
     _write_config(user, pw)
 
 
-def main(argv=None):
+def _default_period():
+    """Default period = current calendar year (YYYY01 ~ YYYY12), overridable by env FM_DM / TO_DM."""
+    import datetime
+    y = datetime.date.today().year
+    return os.environ.get("FM_DM", f"{y}01"), os.environ.get("TO_DM", f"{y}12")
+
+
+def build_parser():
+    fm0, to0 = _default_period()
     p = argparse.ArgumentParser(prog="soa_verify")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("setup").set_defaults(fn=cmd_setup)
     sub.add_parser("owners").set_defaults(fn=cmd_owners)
+    sub.add_parser("doctor", help="check Python, external programs, credentials and SVMS login").set_defaults(fn=cmd_doctor)
     v = sub.add_parser("verify")
     g = v.add_mutually_exclusive_group()
     g.add_argument("--vessel"); g.add_argument("--owner"); g.add_argument("--all", action="store_true")
-    v.add_argument("--from", dest="fm", default=os.environ.get("FM_DM", "202601"))
-    v.add_argument("--to", dest="to", default=os.environ.get("TO_DM", "202612"))
+    v.add_argument("--from", dest="fm", default=fm0)
+    v.add_argument("--to", dest="to", default=to0)
     v.add_argument("--dept", default="05", choices=["05", "04"], help="05 Technical (default) / 04 Crew")
     v.add_argument("--save", action="store_true", help="write checkbox / reject remark to SVMS")
     v.add_argument("--cap", type=int, default=300, help="max line writes per run")
     v.set_defaults(fn=cmd_verify)
     c = sub.add_parser("cleanup", help="remove leftover reject remarks on confirmed lines")
     c.add_argument("--vessel", required=True)
-    c.add_argument("--from", dest="fm", default=os.environ.get("FM_DM", "202601"))
-    c.add_argument("--to", dest="to", default=os.environ.get("TO_DM", "202612"))
+    c.add_argument("--from", dest="fm", default=fm0)
+    c.add_argument("--to", dest="to", default=to0)
     c.add_argument("--save", action="store_true")
     c.set_defaults(fn=cmd_cleanup)
     s2 = sub.add_parser("stage2", help="stage 2: Operational AOR, FX >=120%%, mgmt fee vs SMA, NRC invoice")
     s2.add_argument("--vessel", required=True)
-    s2.add_argument("--from", dest="fm", default=os.environ.get("FM_DM", "202601"))
-    s2.add_argument("--to", dest="to", default=os.environ.get("TO_DM", "202612"))
+    s2.add_argument("--from", dest="fm", default=fm0)
+    s2.add_argument("--to", dest="to", default=to0)
     s2.add_argument("--dept", default="05", choices=["05", "04"])
     s2.add_argument("--save", action="store_true", help="write reject checkbox + remark to SVMS")
     s2.add_argument("--cap", type=int, default=300)
     s2.set_defaults(fn=cmd_stage2)
-    a = p.parse_args(argv)
+    return p
+
+
+def main(argv=None):
+    a = build_parser().parse_args(argv)
     for k in ("fm", "to"):
         if hasattr(a, k) and not re.fullmatch(r"20\d{2}(0[1-9]|1[0-2])", getattr(a, k)):
             raise SystemExit(f"--{k.replace('fm', 'from')} must be YYYYMM")
+    if hasattr(a, "fm") and a.fm > a.to:
+        raise SystemExit("--from must not be later than --to")
     a.fn(a)
 
 
