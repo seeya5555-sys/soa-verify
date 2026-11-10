@@ -29,6 +29,8 @@ READ_ALLOW = {
     ("PKG_CM_USER", "SP_GET_USER_INFO"), ("PKG_CM_CD", "SP_GET_VSL"),
     ("PKG_CO_SLIP_EX", "SP_GET_SOA"), ("PKG_CO_SLIP_EX", "SP_GET_SOA_INFO"), ("PKG_CO_SLIP_EX", "SP_GET_SOA_OPR"),
     ("PKG_CM_FILE", "SP_GET_FILE"), ("PKG_CM_REF", "SP_GET_REF_DOC"),
+    # 2차 검증(stage2): A Operational AOR · B 환율 · E 중복(비용청구) — 읽기 전용 (11-10 누락 수정)
+    ("PKG_CO_OPEX", "SP_GET_AOR"), ("PKG_CO", "SP_GET_EX_RATE"), ("PKG_CO_OPEX", "SP_GET_OPEX"),
 }
 WRITE_PKG, WRITE_PROC = "PKG_CO_SLIP_EX", "SP_SET_SOA_D_STATUS"
 WRITE_KEYS = {"SX_CD", "SX_SEQ", "CFM_YN", "RJT_YN", "RJT_RMK", "STATUS2", "STATUS_RMK2"}
