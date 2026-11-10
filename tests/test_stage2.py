@@ -326,8 +326,8 @@ class T(unittest.TestCase):
         self.assertEqual(S2.find_fund_dup(fidx, {**base, "REF_NO": "TSTCA2609280001"}), ("TSTCO2610070010", None, "26/11/03692"))
         same_aor = {**fr, "REF_NO": "TSTCA2609280001"}
         self.assertFalse(S2.find_fund_dup({k: [same_aor] for k in fidx}, {**base, "REF_NO": "TSTCA2609280001"}))   # 같은 AOR = 정상
-        self.assertFalse(S2.find_fund_dup(fidx, {**base, "REF_NO": "TSTCO2610070010"}))      # 라인이 그 비용청구 번호 참조
-        self.assertFalse(S2.find_fund_dup(fidx, {**base, "REF_NO": " TSTCO261007001"}))      # 앞부분 일치(잘린 번호)
+        self.assertEqual(S2.find_fund_dup(fidx, {**base, "REF_NO": "TSTCO2610070010"})[0], "TSTCO2610070010")   # 비용청구 번호 참조 예외 삭제(11-10)
+        self.assertEqual(S2.find_fund_dup(fidx, {**base, "REF_NO": " TSTCO261007001"})[0], "TSTCO2610070010")
         self.assertFalse(S2.find_fund_dup(fidx, {**base, "REF_NO": None}))                    # AOR 라인 REF 미기재 = 판단불가
         self.assertEqual(S2.find_fund_dup(fidx, {**base, "REF_NO": None, "SOA_OPEX_TP": "O"})[0], "TSTCO2610070010")
         line = {**base, "REF_NO": "TSTCA2609280001"}

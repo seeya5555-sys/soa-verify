@@ -434,8 +434,8 @@ def _ref(v):
 
 def find_fund_dup(fidx, l, sl_dm=None):
     """SOA 라인이 같은 선박 비용청구로 이미 지급된 인보이스면 (OPEX_CD, None, inv). 아니면 False/None.
-    정상 정산 예외(11-10 백테스트 4척 0오탐): ①라인 REF_NO가 그 비용청구의 AOR(REF_NO/AOR_CD)과 같음
-    ②라인 REF_NO가 그 비용청구 번호(OPEX_CD) 자체(앞부분 일치 포함) ③AOR 라인인데 REF_NO 미기재(구데이터·판단불가)."""
+    정상 정산 예외: ①라인 REF_NO가 그 비용청구의 AOR(REF_NO/AOR_CD)과 같음 ②AOR 라인인데 REF_NO 미기재(구데이터·판단불가).
+    ※ 'REF_NO에 비용청구 번호(CO)' 예외는 11-10 형 결정으로 삭제 — 예전 무작위 입력 관행, 현재 규칙상 AOR 번호만 유효."""
     k = dup_key(l)
     if k is None or not fidx:
         return None
@@ -446,8 +446,8 @@ def find_fund_dup(fidx, l, sl_dm=None):
         fdm = str(r.get("REQ_DT") or r.get("OPEX_DT") or r.get("INV_DT") or "")[:6]
         if sl_dm and (len(fdm) < 6 or _months_apart(fdm, sl_dm) > DUP_LOOKBACK_M):
             continue
-        fa, fo = _ref(r.get("REF_NO") or r.get("AOR_CD")), _ref(r.get("OPEX_CD"))
-        if lref and ((fa and lref == fa) or (fo and (lref == fo or (len(lref) >= 12 and fo.startswith(lref))))):
+        fa = _ref(r.get("REF_NO") or r.get("AOR_CD"))
+        if lref and fa and lref == fa:
             continue
         return (str(r.get("OPEX_CD") or ""), None, str(r.get("INV_NO") or "").strip())
     return False
