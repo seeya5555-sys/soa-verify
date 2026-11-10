@@ -258,7 +258,7 @@ def main(argv=None):
     c.add_argument("--to", dest="to", default=os.environ.get("TO_DM", "202612"))
     c.add_argument("--save", action="store_true")
     c.set_defaults(fn=cmd_cleanup)
-    s2 = sub.add_parser("stage2", help="stage 2: Operational AOR, FX >=120%, mgmt fee vs SMA, NRC invoice")
+    s2 = sub.add_parser("stage2", help="stage 2: Operational AOR, FX >=120%%, mgmt fee vs SMA, NRC invoice")
     s2.add_argument("--vessel", required=True)
     s2.add_argument("--from", dest="fm", default=os.environ.get("FM_DM", "202601"))
     s2.add_argument("--to", dest="to", default=os.environ.get("TO_DM", "202612"))
