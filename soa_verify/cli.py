@@ -212,7 +212,7 @@ def cmd_cleanup(a):
 
 
 def cmd_stage2(a):
-    """2차 검증: Operational AOR · 외화 환율 과청구(≥120%) → 리젝 체크 + 리마크. 승인·제출·메일 없음."""
+    """2차 검증: Operational AOR · 외화 환율(≥120%) · 관리비 SMA · NRC → 리젝 체크 + 리마크. 승인·제출·메일 없음."""
     import soa_stage2 as S2
     svms.login()
     vs = my_vessels()
@@ -258,7 +258,7 @@ def main(argv=None):
     c.add_argument("--to", dest="to", default=os.environ.get("TO_DM", "202612"))
     c.add_argument("--save", action="store_true")
     c.set_defaults(fn=cmd_cleanup)
-    s2 = sub.add_parser("stage2", help="stage 2: Operational AOR + FX over-charge (>=120%) checks")
+    s2 = sub.add_parser("stage2", help="stage 2: Operational AOR, FX >=120%, mgmt fee vs SMA, NRC invoice")
     s2.add_argument("--vessel", required=True)
     s2.add_argument("--from", dest="fm", default=os.environ.get("FM_DM", "202601"))
     s2.add_argument("--to", dest="to", default=os.environ.get("TO_DM", "202612"))

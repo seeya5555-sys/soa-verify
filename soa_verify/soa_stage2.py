@@ -6,6 +6,9 @@
 # 체크 항목
 #   A. Operational AOR: Tech(05)/Crew(04) SOA 라인의 AOR Req No(REF_NO)를 SVMS 비용청구 AOR 원장(SP_GET_AOR)에서
 #      조회해 DEPT_CD=O(Operational)이면 리젝 체크 + "Operational AOR" 리마크. (Operational 비용은 SOA-Operational로 가야 함)
+#   C. 관리비 SMA 초과: EXP_CD 080101 라인의 SOA 합계(USD)가 계약(~/.soa-verify/mgmt_fee.json: 일단가×SOA월 일수 또는 월 고정액)+$1 초과면
+#      리젝 + "Mgmt fee over SMA" 리마크. 낮은 청구(부분월)는 무관. 계약표 미등록 선박·비USD 청구는 보고만.
+#   D. NRC 인보이스: 라인 첨부 PDF 본문에 National Response Corporation / OPA 90 Service Invoice → 리젝 + "NRC invoice".
 #   B. 외화 환율 과청구: Local Currency(SOA_CUR_CD)≠USD 라인. 기준 USD = Local Amount × 기준환율(SVMS 환율표 교차,
 #      없으면 하나은행 당일 미화환산율). 청구 USD(AMT_USD) ≥ 기준 × 1.20이면 리젝 + "FX over-charged" 리마크. 낮은 건 무관.
 # 🔒 스코프: 라인 리젝 체크·리마크까지만. Approval(STATUS=C)·출금 Slip·리젝 제출(STATUS=R)·관리사 메일 경로 없음.
@@ -37,8 +40,44 @@ def operational_remark(aor_cd, sl_tp):
             f"Pls move to Operational SOA.")[:240]
 
 
+MF_EXP_CD = "080101"    # 선박,선원관리수수료
+MF_TOL = 1.0            # 계약 월액 반올림(13,333.33 등) 허용. 초과 청구만 리젝(부분월·낮은 청구는 무관)
+MF_REMARK_PREFIX = "Mgmt fee over SMA"
+NRC_REMARK = "NRC invoice"
+NRC_PAT = re.compile(r"national\s+response\s+corp|nrc\s+opa\s*'?\s*90|opa\s*'?\s*90\s+service\s+invoice", re.I)
+MF_DB = os.path.join(os.path.expanduser("~"), ".soa-verify", "mgmt_fee.json")   # 계약표는 저장소에 포함 안 함(회사 자료)
+
+
+def mf_remark(charged, exp_usd, desc):
+    return f"{MF_REMARK_PREFIX}: charged USD {charged:,.2f} vs contract USD {exp_usd:,.2f} ({desc})"
+
+
+def load_mgmt_fee(path=None):
+    """{VESSEL NAME: {basis: daily|monthly, rate, manager}} — 없거나 깨지면 {} (C 비활성, 보고)."""
+    import json
+    try:
+        with open(path or os.environ.get("SOA_MGMT_FEE_DB") or MF_DB) as f:
+            return {k.strip().upper(): v for k, v in (json.load(f).get("vessels") or {}).items()}
+    except (OSError, ValueError):
+        return {}
+
+
+def mf_expected(rec, sl_dm):
+    """계약 월액(USD)과 설명. daily = 일단가 × 해당 SOA월(SL_DM) 일수."""
+    import calendar
+    if rec.get("basis") == "daily":
+        days = calendar.monthrange(int(sl_dm[:4]), int(sl_dm[4:6]))[1]
+        return rec["rate"] * days, f"{rec['rate']:g}/day x {days}d, {rec.get('manager', '')}".strip(", ")
+    return rec["rate"], f"monthly {rec['rate']:,.2f}, {rec.get('manager', '')}".strip(", ")
+
+
+def is_nrc_text(txt):
+    return bool(NRC_PAT.search(txt or ""))
+
+
 FX_OVER = 1.20          # 청구 USD ≥ 기준 USD × 1.20 → 리젝(20% 이상 높을 때만, 낮은 건 무관)
 FX_REMARK_PREFIX = "FX over-charged"
+OWN_PREFIXES = (OPR_REMARK_PREFIX, FX_REMARK_PREFIX, MF_REMARK_PREFIX, NRC_REMARK)
 
 
 def fx_remark(cur, amt, usd, rate, src):
@@ -54,7 +93,7 @@ def _num(v):
         return None
 
 
-def judge_line(line, aor_lookup, sl_tp, fx_lookup=None):
+def judge_line(line, aor_lookup, sl_tp, fx_lookup=None, mf=None, nrc=None):
     """라인 1개 판정(순수). aor_lookup(aor_cd)->row|None / fx_lookup(cur)->(usd_per_unit, src)|None.
     returns (verdict, key, note, remark): verdict ∈ skip|pass|reject|already|resub|error"""
     findings, errors, checked = [], [], []
@@ -87,6 +126,17 @@ def judge_line(line, aor_lookup, sl_tp, fx_lookup=None):
             from decimal import Decimal as D
             if D(str(usd)) >= D(str(amt)) * D(repr(rate)) * D("1.20"):   # 정확한 ≥120% (float 경계오차 배제)
                 findings.append(("B", fx_remark(cur, amt, usd, rate, src)))
+    # C. 관리비(080101) SMA 초과: mf = (expected_usd, charged_sum_usd, desc) — SOA 단위 합계로 판단(호출자 계산)
+    if mf is not None and str(line.get("EXP_CD") or "") == MF_EXP_CD:
+        checked.append("MF")
+        exp_usd, charged, desc = mf
+        if charged > exp_usd + MF_TOL:
+            findings.append(("C", mf_remark(charged, exp_usd, desc)))
+    # D. NRC 인보이스: nrc = True(첨부 본문에서 NRC 확인) / False / None(대상 아님)
+    if nrc is not None:
+        checked.append("NRC")
+        if nrc:
+            findings.append(("D", NRC_REMARK))
     key = " ".join(checked) or None
     if not checked:
         return "skip", None, "대상 아님", None
@@ -95,9 +145,10 @@ def judge_line(line, aor_lookup, sl_tp, fx_lookup=None):
     if not findings:
         return "pass", key, "정상", None
     tags = "+".join(t for t, _ in findings)
-    rmk = " | ".join(r for _, r in findings)[:240]
+    # D(NRC) 적중 시 저장 리마크는 정확히 "NRC invoice". 다른 적중은 보고(tags)로만.
+    rmk = NRC_REMARK if any(t == "D" for t, _ in findings) else " | ".join(r for _, r in findings)[:240]
     prev = str(line.get("RJT_RMK") or "")
-    if line.get("RJT_YN") == "Y" and (prev.startswith(OPR_REMARK_PREFIX) or prev.startswith(FX_REMARK_PREFIX)):
+    if line.get("RJT_YN") == "Y" and prev.startswith(OWN_PREFIXES):
         return "already", key, "이미 2차 리젝", None
     if line.get("STATUS2") == "Y" or (line.get("STATUS_RMK2") or "").strip():
         return "resub", key, f"[{tags}] 관리사 재상신/S·M 리마크 있음(보존, 사람 확인)", None
@@ -106,11 +157,37 @@ def judge_line(line, aor_lookup, sl_tp, fx_lookup=None):
     return "reject", key, tags, rmk
 
 
-SNAP_KEYS = ("CFM_YN", "RJT_YN", "RJT_RMK", "STATUS2", "STATUS_RMK2", "REF_NO", "SOA_AMT", "SOA_CUR_CD", "AMT_USD")
+SNAP_KEYS = ("CFM_YN", "RJT_YN", "RJT_RMK", "STATUS2", "STATUS_RMK2", "REF_NO", "SOA_AMT", "SOA_CUR_CD", "AMT_USD",
+             "EXP_CD", "FILE_REF_NO", "FILE_NO", "SX_SEQ")
 
 
 def _snap(l):
     return tuple(str(l.get(k) or "") for k in SNAP_KEYS)
+
+
+def _soa_fp(hdr_row, lines):
+    """SOA 전체 지문: SL_DM·STATUS + 모든 라인 스냅샷(정렬). C(라인 합계)·추가/삭제 라인 변화까지 감지."""
+    return (str(hdr_row.get("SL_DM") or ""), str(hdr_row.get("STATUS") or ""),
+            tuple(sorted(_snap(x) for x in lines)))
+
+
+def _files_fp(sx, l):
+    import soa_review as R
+    fs = R.get_files(l.get("FILE_REF_NO") or (str(sx) + str(l.get("SX_SEQ"))))
+    return tuple(sorted(str(f.get("SAVE_NM") or f.get("FILE_NM") or "") for f in fs))
+
+
+def _soa_now(vsl, sx):
+    """(헤더행, 라인들) 재조회. 실패 = None."""
+    try:
+        hdr = select("PKG_CO_SLIP_EX", "SP_GET_SOA",
+                     {"VSL_CD": vsl, "FM_DM": FM_DM, "TO_DM": TO_DM, "SOA_OW_COMP_ID": "", "VSL_STATUS": "1"})
+        h = next((x for x in (hdr.get("P_RS") or []) if x.get("SX_CD") == sx), None)
+        if not h:
+            return None
+        return h, select("PKG_CO_SLIP_EX", "SP_GET_SOA_INFO", {"SX_CD": sx}).get("P_RS_D", []) or []
+    except BaseException:
+        return None
 
 
 def _fetch_line(vsl, sx, seq, need_submitted=True):
@@ -204,6 +281,46 @@ def make_fx_lookup(dt=None):
     return lookup
 
 
+NRC_SCAN = os.environ.get("SOA_STAGE2_NRC", "1") == "1"
+
+
+def nrc_scan(sx, l, warns):
+    try:
+        return _nrc_scan(sx, l, warns)
+    except BaseException as e:   # 다운로드·추출·OCR 예외 = warn-only(미탐 위험), 전체 중단 안 함
+        warns.append(f"{sx} s{l.get('SX_SEQ')} NRC 검사 예외 → D 미검사: {str(e)[:40]}")
+        return None
+
+
+def _nrc_scan(sx, l, warns):
+    """라인 첨부 PDF 본문에 NRC 인보이스 표식이 있으면 True. 첨부 없음 → None(대상 아님).
+    다운로드 실패·판독 불가는 warn(비차단: 오기입 위험이 아닌 미탐 위험이라 보고만)."""
+    import soa_review as R
+    import soa_amount as SA
+    seq = l.get("SX_SEQ")
+    try:
+        files = [f for f in R.get_files(l.get("FILE_REF_NO") or (str(sx) + str(seq))) if R._is_pdf_file(f)]
+    except BaseException as e:
+        warns.append(f"{sx} s{seq} 첨부 조회 실패 → D 미검사: {str(e)[:40]}"); return None
+    if not files:
+        return None
+    paths = R.dl(sx, seq, files)
+    if len(paths) < len(files):
+        warns.append(f"{sx} s{seq} 첨부 {len(files) - len(paths)}건 다운로드 실패 → D 일부 미검사")
+    unread = 0
+    for p in paths:
+        txt = SA.pdf_body(p)
+        if len(txt.strip()) < 50:
+            txt = SA.ocr_body(p, maxpages=1)
+        if is_nrc_text(txt):
+            return True
+        if len(txt.strip()) < 50:
+            unread += 1
+    if unread:
+        warns.append(f"{sx} s{seq} 첨부 {unread}건 판독 불가 → D 미검사")
+    return False if paths else None
+
+
 def reject_line(sx, seq, rmk):
     return save("PKG_CO_SLIP_EX", "SP_SET_SOA_D_STATUS",
                 {"SX_CD": sx, "SX_SEQ": seq, "CFM_YN": "N", "RJT_YN": "Y",
@@ -223,9 +340,18 @@ def run(vsl):
         return cache[aor_cd]
 
     fx_lookup = make_fx_lookup()
+    vm = (select("PKG_CM_CD", "SP_GET_VSL", {"VSL_CD": vsl}).get("P_RS") or [{}])[0]
+    vname = str(vm.get("NAME") or "").strip().upper()
+    mf_db = load_mgmt_fee()
+    mf_rec = mf_db.get(vname)
+    warns = []
+    if not mf_db:
+        warns.append("관리비 계약표 없음 → C 미검사")
+    elif not mf_rec:
+        warns.append(f"관리비 계약표에 '{vname or vsl}' 없음 → C 미검사")
 
     print(f"=== SOA 2차 검증 [{vsl}] {'VERIFY(리젝체크+리마크 실기입)' if VERIFY else 'DRY(0 write)'} ===")
-    print(f"   SL_TP={SL_TP}({DEPT_LABEL[SL_TP]}) · SL_DM {FM_DM}~{TO_DM} · STATUS=S · 항목: A.Operational AOR · B.외화 환율 과청구(≥120%)\n")
+    print(f"   SL_TP={SL_TP}({DEPT_LABEL[SL_TP]}) · SL_DM {FM_DM}~{TO_DM} · STATUS=S · 항목: A.Operational AOR · B.외화 환율(≥120%) · C.관리비 SMA · D.NRC\n")
     hdr = select("PKG_CO_SLIP_EX", "SP_GET_SOA",
                  {"VSL_CD": vsl, "FM_DM": FM_DM, "TO_DM": TO_DM, "SOA_OW_COMP_ID": "", "VSL_STATUS": "1"})
     rows = [r for r in (hdr.get("P_RS", []) or [])
@@ -241,8 +367,20 @@ def run(vsl):
         sx = r.get("SX_CD")
         lines = select("PKG_CO_SLIP_EX", "SP_GET_SOA_INFO", {"SX_CD": sx}).get("P_RS_D", []) or []
         print(f"── {sx} ({r.get('SL_DM')}) | 라인 {len(lines)} ──")
+        soa_fp = _soa_fp(r, lines)
+        mf = None
+        fee_lines = [l for l in lines if str(l.get("EXP_CD") or "") == MF_EXP_CD]
+        if mf_rec and fee_lines:
+            if any(str(l.get("SOA_CUR_CD") or "").upper() not in ("USD", "") for l in fee_lines):
+                warns.append(f"{sx} 관리비 비USD 청구 → C 미검사(사람 확인)")
+            else:
+                exp_usd, desc = mf_expected(mf_rec, r.get("SL_DM") or "")
+                charged = sum(_num(l.get("AMT_USD")) or 0 for l in fee_lines)
+                mf = (exp_usd, charged, desc)
+                print(f"    관리비: 청구 USD {charged:,.2f} / 계약 USD {exp_usd:,.2f} ({desc})")
         for l in lines:
-            verdict, aor, note, rmk = judge_line(l, aor_lookup, SL_TP, fx_lookup)
+            nrc = nrc_scan(sx, l, warns) if NRC_SCAN else None
+            verdict, aor, note, rmk = judge_line(l, aor_lookup, SL_TP, fx_lookup, mf, nrc)
             if verdict == "skip":
                 continue
             n["aor"] += 1; n[verdict] += 1
@@ -251,19 +389,31 @@ def run(vsl):
             tag = {"reject": "🟥리젝대상", "already": "↩기리젝", "resub": "↩재상신", "error": "🚨확인필요"}[verdict]
             print(f"    s{l.get('SX_SEQ'):<4} [{l.get('SOA_CUR_CD')}{l.get('SOA_AMT')}] {aor} → {tag} ({note})")
             if verdict == "reject":
-                todo.append((sx, l.get("SX_SEQ"), rmk, _snap(l)))
+                ffp = None
+                if rmk == NRC_REMARK:
+                    try:
+                        ffp = _files_fp(sx, l)
+                    except BaseException:
+                        ffp = "ERR"
+                todo.append((sx, l.get("SX_SEQ"), rmk, soa_fp, ffp, l))
     print()
     # ② write: preflight 오류가 1건이라도 있으면 전체 쓰기 0 (fail-closed)
     if VERIFY and n["error"]:
         print(f"🚨 확인필요 {n['error']}건 — 전체 기입 중단(0 write). 원인 해소 후 재실행.")
     elif VERIFY and todo:
-        for sx, seq, rmk, snap in todo:
+        for sx, seq, rmk, soa_fp, ffp, l0 in todo:
             if n["written"] + n["wfail"] >= CAP:
                 print(f"    ⏸ CAP({CAP}) 도달 — 기입 중단"); break
             # TOCTOU 가드: 기입 직전 헤더 STATUS=S·라인 상태 불변 재확인
-            cur = _fetch_line(vsl, sx, seq)
-            if cur is None or _snap(cur) != snap:
-                print(f"    ↩ {sx} s{seq} 상태 변경됨(헤더≠S 또는 라인 수정) — 스킵"); continue
+            now = _soa_now(vsl, sx)
+            stale = (now is None or now[0].get("STATUS") != "S" or _soa_fp(now[0], now[1]) != soa_fp)
+            if not stale and ffp is not None:
+                try:
+                    stale = (ffp == "ERR" or _files_fp(sx, l0) != ffp)
+                except BaseException:
+                    stale = True
+            if stale:
+                print(f"    ↩ {sx} s{seq} 상태 변경됨(헤더≠S·라인/첨부 수정) — 스킵"); continue
             try:
                 reject_line(sx, seq, rmk)
             except BaseException as e:
@@ -280,6 +430,8 @@ def run(vsl):
         print(f"    실기입: 리젝체크 {n['written']} · 실패 {n['wfail']}")
     else:
         print("    (DRY — 0 write. VERIFY=1로 실기입)")
+    for w in warns:
+        print(f"    ⚠️ {w}")
     print("    ⚠️ Approval·출금 Slip·리젝 제출·관리사 메일 = 미실행")
     return 1 if (n["error"] or n["wfail"]) else 0
 

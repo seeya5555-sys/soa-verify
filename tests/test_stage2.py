@@ -49,6 +49,8 @@ class T(unittest.TestCase):
                 return {"P_RS": [{"SX_CD": "SVMLCX2609010001", "SL_TP": "05", "STATUS": st["hdr"], "SL_DM": "202609"}]}
             if sp == "SP_GET_SOA_INFO":
                 return {"P_RS_D": [dict(v) for v in st["lines"].values()]}
+            if sp == "SP_GET_VSL":
+                return {"P_RS": [{"NAME": "SILVER MILLIE"}]}
             if sp == "SP_GET_AOR":
                 a = aors.get(prm["AOR_CD"])
                 if a == "boom": raise SystemExit("500")
@@ -64,6 +66,7 @@ class T(unittest.TestCase):
         self.addCleanup(restore)
         S2.select, S2.save, S2.login = select, save, lambda: None
         S2.make_fx_lookup = lambda dt=None: (lambda c: None)
+        S2.NRC_SCAN = False
         S2.VERIFY, S2.SL_TP, S2.FM_DM, S2.TO_DM, S2.CAP = True, "05", "202601", "202612", 300
         return st
 
@@ -86,14 +89,14 @@ class T(unittest.TestCase):
     def test_header_changed_skips(self):
         st = self._env([{"SX_SEQ": 1, "REF_NO": "SVMLCA2609010001"}],
                        {"SVMLCA2609010001": {"AOR_CD": "SVMLCA2609010001", "DEPT_CD": "O"}})
-        orig = S2._fetch_line
+        orig = S2._soa_now
         def flip(*a, **k):
             st["hdr"] = "C"; return orig(*a, **k)
-        S2._fetch_line = flip
+        S2._soa_now = flip
         try:
             S2.run("SVML")
         finally:
-            S2._fetch_line = orig
+            S2._soa_now = orig
         self.assertEqual(st["saves"], [])
 
     FX = staticmethod(lambda c: {"EUR": (1.1222, "SVMS"), "TRY": (0.0199, "Hana")}.get(c))
@@ -159,6 +162,65 @@ class T(unittest.TestCase):
             self.assertEqual(f("TRY"), (0.0199, "Hana")); self.assertIsNone(f("BRL"))
         finally:
             S2.select, S2.hana_rates = S2_select, S2_hana
+
+    def test_mgmt_fee(self):
+        l = {"EXP_CD": "080101", "SOA_CUR_CD": "USD", "SOA_AMT": 10695, "AMT_USD": 10695}
+        self.assertEqual(S2.judge_line(l, lk, "05", None, (10695.0, 10695.0, "345/day x 31d"))[0], "pass")
+        self.assertEqual(S2.judge_line(l, lk, "05", None, (10695.0, 10695.99, "x"))[0], "pass")      # 반올림 허용
+        v, _, tag, r = S2.judge_line(l, lk, "05", None, (10695.0, 11000.0, "345/day x 31d, CSM"))
+        self.assertEqual((v, tag), ("reject", "C")); self.assertTrue(r.startswith("Mgmt fee over SMA: charged USD 11,000.00"))
+        self.assertEqual(S2.judge_line(l, lk, "05", None, (10695.0, 4932.0, "x"))[0], "pass")       # 부분월(낮음)
+        other = {"EXP_CD": "080104", "SOA_CUR_CD": "USD", "SOA_AMT": 750, "AMT_USD": 750}
+        self.assertEqual(S2.judge_line(other, lk, "05", None, (10695.0, 99999.0, "x"))[0], "skip")
+
+    def test_mf_expected(self):
+        rec = {"basis": "daily", "rate": 204, "manager": "CSM"}
+        self.assertEqual(S2.mf_expected(rec, "202602")[0], 204 * 28)
+        self.assertEqual(S2.mf_expected(rec, "202401")[0], 204 * 31)
+        self.assertEqual(S2.mf_expected({"basis": "monthly", "rate": 14254.42}, "202602")[0], 14254.42)
+
+    def test_nrc(self):
+        self.assertTrue(S2.is_nrc_text("NATIONAL RESPONSE CORPORATION\n2025 OPA 90 Service Invoice"))
+        self.assertTrue(S2.is_nrc_text("NRC OPA'90 OSRO Services"))
+        self.assertFalse(S2.is_nrc_text("Non recurring cost (NRC) for crane repair"))
+        v, _, tag, r = S2.judge_line({"SOA_CUR_CD": "USD"}, lk, "05", None, None, True)
+        self.assertEqual((v, tag, r), ("reject", "D", "NRC invoice"))
+        self.assertEqual(S2.judge_line({"SOA_CUR_CD": "USD"}, lk, "05", None, None, False)[0], "pass")
+        self.assertEqual(S2.judge_line({"SOA_CUR_CD": "USD", "RJT_YN": "Y", "RJT_RMK": "NRC invoice"}, lk, "05", None, None, True)[0], "already")
+
+    def test_fee_db_loaded(self):
+        import json, tempfile
+        f = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        json.dump({"vessels": {"Atlantic Merchant": {"basis": "daily", "rate": 204}, "PELICAN MARINER": {"basis": "monthly", "rate": 8000}}}, f); f.close()
+        db = S2.load_mgmt_fee(f.name)
+        self.assertEqual(db["ATLANTIC MERCHANT"]["rate"], 204); self.assertEqual(db["PELICAN MARINER"]["basis"], "monthly")
+
+    def test_nrc_remark_exact_when_combined(self):
+        l = {"REF_NO": "SVMLCA2609010001", "SOA_CUR_CD": "EUR", "SOA_AMT": 600, "AMT_USD": 2000, "EXP_CD": "080101"}
+        v, _, tags, r = S2.judge_line(l, lk, "05", self.FX, (10.0, 2000.0, "x"), True)
+        self.assertEqual((v, r), ("reject", "NRC invoice")); self.assertEqual(tags, "A+B+C+D")
+
+    def test_other_line_change_makes_stale(self):
+        st = self._env([{"SX_SEQ": 1, "REF_NO": "SVMLCA2609010001"}, {"SX_SEQ": 2, "REF_NO": None, "SOA_AMT": 5}],
+                       {"SVMLCA2609010001": {"AOR_CD": "SVMLCA2609010001", "DEPT_CD": "O"}})
+        orig = S2._soa_now
+        def mutate(*a, **k):
+            st["lines"][2]["SOA_AMT"] = 999; return orig(*a, **k)
+        S2._soa_now = mutate
+        try:
+            S2.run("SVML")
+        finally:
+            S2._soa_now = orig
+        self.assertEqual(st["saves"], [])
+
+    def test_nrc_scan_exception_is_warn(self):
+        import soa_review as R
+        o = R.get_files
+        R.get_files = lambda *a: (_ for _ in ()).throw(RuntimeError("boom"))
+        try:
+            w = []; self.assertIsNone(S2.nrc_scan("SX", {"SX_SEQ": 1}, w)); self.assertTrue(w)
+        finally:
+            R.get_files = o
 
     def test_remark(self):
         r = S2.operational_remark("SVMLCA2609010001", "04")
