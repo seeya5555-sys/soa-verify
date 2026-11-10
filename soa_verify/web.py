@@ -22,7 +22,7 @@ YM_RE = re.compile(r"^20\d{2}(0[1-9]|1[0-2])$")
 
 
 def build_cmd(action, vessels, fm, to, dept):
-    """Validated argv for one run. action: verify|cleanup. Always --save (= the page's 실기입 buttons)."""
+    """Validated argv for one run. action: verify|stage2|cleanup. Always --save (= the page's 실기입 buttons)."""
     vessels = (vessels or "").replace(" ", "").upper()
     if not VSL_RE.match(vessels):
         raise ValueError("선박코드는 4자리, 여러 척이면 쉼표로 구분 (예: SVGW,SAPS)")
@@ -35,6 +35,8 @@ def build_cmd(action, vessels, fm, to, dept):
         return base + ["verify", "--vessel", vessels, "--from", fm, "--to", to, "--dept", dept, "--save"]
     if action == "cleanup":
         return base + ["cleanup", "--vessel", vessels, "--from", fm, "--to", to, "--save"]
+    if action == "stage2":
+        return base + ["stage2", "--vessel", vessels, "--from", fm, "--to", to, "--dept", dept, "--save"]
     raise ValueError("unknown action")
 
 
@@ -87,7 +89,7 @@ input,select{padding:7px 9px;border:1px solid #ccc;border-radius:4px;font-size:1
 <input id=vsl placeholder="선박코드 (예: SVGW,SAPS)" style="width:190px;text-transform:uppercase">
 <input id=fm placeholder="시작 YYYYMM" maxlength=6 style="width:110px"><input id=to placeholder="끝 YYYYMM" maxlength=6 style="width:110px">
 <select id=tp><option value=05>Technical (05)</option><option value=04>Crew (04)</option></select>
-<button class=live onclick="run('verify')">검증 실기입</button><br><button class=soft onclick="run('cleanup')">리마크정리</button>
+<button class=live onclick="run('verify')">검증 실기입</button><button class=live onclick="run('stage2')">2차 검증</button><br><button class=soft onclick="run('cleanup')">리마크정리</button>
 <div style="font-size:12px;color:#666;margin-top:6px">판정 모델: Claude Haiku 5.5 고정 · 체크박스/리젝 리마크만 저장(승인·출금·메일 없음)</div></div>
 <h4>실행 로그</h4><pre id=log>—</pre>
 <script>
@@ -99,7 +101,7 @@ async function cred(){const c=await j('/api/cred');const el=document.getElementB
  document.getElementById('cu').textContent=c.user}
 function edit(){document.getElementById('cred').innerHTML=`SVMS 아이디 <input id=u> 비밀번호 <input id=p type=password> <button class=live onclick="save()">저장</button>`}
 async function save(){const r=await j('/api/cred',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user:u.value,pw:p.value})});if(r.error)alert(r.error);cred()}
-async function run(a){if(a==='verify'&&!confirm('SVMS에 체크박스·리젝 리마크가 실제로 기입됩니다. 진행할까요?'))return;
+async function run(a){if((a==='verify'||a==='stage2')&&!confirm('SVMS에 체크박스·리젝 리마크가 실제로 기입됩니다. 진행할까요?'))return;
  const r=await j('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:a,vessels:vsl.value,fm:fm.value,to:to.value,dept:tp.value})});if(r.error)alert(r.error);poll()}
 async function poll(){const s=await j('/api/status');document.getElementById('log').textContent=(s.running?'[실행중] ':s.rc===null?'':'[종료 rc='+s.rc+'] ')+'\\n'+s.log;if(s.running)setTimeout(poll,3000)}
 cred();poll();

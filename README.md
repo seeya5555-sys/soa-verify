@@ -29,6 +29,16 @@ python3 -m soa_verify verify --owner 037 --save       # SVMS에 체크박스·�
 ```
 Claude Code에서는 저장소를 연 뒤 "SOA 1단계 검증 돌려줘"라고 하면 `.claude/skills/soa-verify` 스킬이 위 명령을 실행합니다.
 
+## 2차 검증 (1단계 이후)
+1단계로 금액 대조를 끝낸 뒤 실행합니다. 현재 체크 항목:
+- **Operational AOR**: Tech(05)/Crew(04) SOA 라인의 AOR Req No를 비용청구 AOR 원장에서 조회해 Dept가 Operational이면 리젝 체크 + 리마크
+  `Operational AOR: <AOR No> (Dept: Operational) - not chargeable to Technical SOA. Pls move to Operational SOA.`
+- AOR 조회 실패·미발견 라인은 기입하지 않고 "확인필요"로만 보고합니다. 이미 리젝된 라인·관리사 재상신 라인의 리마크는 덮어쓰지 않습니다.
+```bash
+python3 -m soa_verify stage2 --vessel ABCD --from 202601 --to 202612 --dept 05          # 미리보기
+python3 -m soa_verify stage2 --vessel ABCD --from 202601 --to 202612 --dept 05 --save   # 리젝 체크 + 리마크 저장
+```
+
 ## 리마크정리
 ```bash
 python3 -m soa_verify cleanup --vessel ABCD --from 202601 --to 202612          # 미리보기

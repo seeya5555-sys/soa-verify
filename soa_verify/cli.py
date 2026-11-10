@@ -211,6 +211,25 @@ def cmd_cleanup(a):
     print(f"=== remark cleanup: {n} line(s) {'cleared' if a.save else '(DRY — add --save)'} ===")
 
 
+def cmd_stage2(a):
+    """2차 검증: Tech/Crew SOA 라인의 Operational AOR(비용청구 Dept=O) → 리젝 체크 + 리마크. 승인·제출·메일 없음."""
+    import soa_stage2 as S2
+    svms.login()
+    vs = my_vessels()
+    if not vs:
+        raise SystemExit("My Vessel lookup returned nothing — stopping (fail-closed).")
+    targets = [x.strip().upper() for x in (a.vessel or "").split(",") if x.strip()]
+    bad = [t for t in targets if t not in vs]
+    if not targets or bad:
+        raise SystemExit(f"choose --vessel from your My Vessel {('(not yours: ' + ', '.join(bad) + ')') if bad else ''}")
+    S2.VERIFY, S2.SL_TP, S2.FM_DM, S2.TO_DM, S2.CAP = bool(a.save), a.dept, a.fm, a.to, a.cap
+    rc = 0
+    for vsl in targets:
+        rc = max(rc, S2.run(vsl) or 0)
+    if rc:
+        raise SystemExit(rc)
+
+
 def cmd_setup(_a):
     user = input("SVMS user id: ").strip()
     pw = getpass.getpass("SVMS password: ")
@@ -239,6 +258,14 @@ def main(argv=None):
     c.add_argument("--to", dest="to", default=os.environ.get("TO_DM", "202612"))
     c.add_argument("--save", action="store_true")
     c.set_defaults(fn=cmd_cleanup)
+    s2 = sub.add_parser("stage2", help="stage 2: reject Operational AOR lines on Tech/Crew SOA")
+    s2.add_argument("--vessel", required=True)
+    s2.add_argument("--from", dest="fm", default=os.environ.get("FM_DM", "202601"))
+    s2.add_argument("--to", dest="to", default=os.environ.get("TO_DM", "202612"))
+    s2.add_argument("--dept", default="05", choices=["05", "04"])
+    s2.add_argument("--save", action="store_true", help="write reject checkbox + remark to SVMS")
+    s2.add_argument("--cap", type=int, default=300)
+    s2.set_defaults(fn=cmd_stage2)
     a = p.parse_args(argv)
     for k in ("fm", "to"):
         if hasattr(a, k) and not re.fullmatch(r"20\d{2}(0[1-9]|1[0-2])", getattr(a, k)):

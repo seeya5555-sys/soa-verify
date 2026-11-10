@@ -27,3 +27,8 @@ description: SVMS SOA 1단계 검증(인보이스 금액 대조)을 내 My Vesse
 - 금액: 라인 금액이 첨부 인보이스 본문(텍스트/OCR)에 있고, 경량 모델(Claude Haiku 5.5, 로컬 `claude` CLI)이 반증하지 않으면 CONFIRM. 고액(≥ USD 5,000)은 선박명/IMO 본문 확인 필요.
 - 파일명 금액만으로는 통과하지 않음. 첨부 없음·본문 미확인 → REJECT? (금액성 사유만 리젝 리마크 저장, 그 외는 보고만)
 - 스캔 판독 불가 → HUMAN.
+
+
+## 2차 검증 (stage2)
+"2차 검증 돌려줘" 요청 시: `python3 -m soa_verify stage2 --vessel <CODE> --from <YYYYMM> --to <YYYYMM> --dept 05` (미리보기).
+사용자가 저장을 확인하면 같은 명령에 `--save`. 한 번만 실행하고 끝날 때까지 기다린다. 판정은 엔진 출력만 그대로 전달한다.
