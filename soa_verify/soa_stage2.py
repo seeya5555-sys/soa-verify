@@ -201,6 +201,10 @@ def _soa_fp(hdr_row, lines):
             tuple(sorted(_snap(x) for x in lines)))
 
 
+def _fp_excl(lines, seq):
+    return tuple(sorted(_snap(x) for x in lines if str(x.get("SX_SEQ")) != str(seq)))
+
+
 def _files_fp(sx, l):
     import soa_review as R
     fs = R.get_files(l.get("FILE_REF_NO") or (str(sx) + str(l.get("SX_SEQ"))))
@@ -438,12 +442,13 @@ def run(vsl):
     if VERIFY and n["error"]:
         print(f"🚨 확인필요 {n['error']}건 — 전체 기입 중단(0 write). 원인 해소 후 재실행.")
     elif VERIFY and todo:
+        expect = {}
         for sx, seq, rmk, soa_fp, ffp, l0 in todo:
             if n["written"] + n["wfail"] >= CAP:
                 print(f"    ⏸ CAP({CAP}) 도달 — 기입 중단"); break
 
             now = _soa_now(vsl, sx)
-            stale = (now is None or now[0].get("STATUS") != "S" or _soa_fp(now[0], now[1]) != soa_fp)
+            stale = (now is None or now[0].get("STATUS") != "S" or _soa_fp(now[0], now[1]) != expect.get(sx, soa_fp))
             if not stale and ffp is not None:
                 try:
                     stale = (ffp == "ERR" or _files_fp(sx, l0) != ffp)
@@ -455,9 +460,19 @@ def run(vsl):
                 reject_line(sx, seq, rmk)
             except BaseException as e:
                 print(f"    🚨 {sx} s{seq} 기입 예외: {str(e)[:80]} — 이후 기입 중단"); n["wfail"] += 1; break
-            after = _fetch_line(vsl, sx, seq, need_submitted=False)
-            if after and after.get("RJT_YN") == "Y" and (after.get("RJT_RMK") or "") == rmk:
+            post = _soa_now(vsl, sx)
+            after = next((x for x in (post[1] if post else []) if str(x.get("SX_SEQ")) == str(seq)), None)
+            pre = next((x for x in now[1] if str(x.get("SX_SEQ")) == str(seq)), None)
+            want = dict(pre or {}, CFM_YN="N", RJT_YN="Y", RJT_RMK=rmk, STATUS2="N", STATUS_RMK2=None)
+            others_same = bool(post) and after is not None and _snap(after) == _snap(want) and \
+                _fp_excl(post[1], seq) == _fp_excl(now[1], seq) and \
+                _soa_fp(post[0], [])[:2] == _soa_fp(now[0], [])[:2]
+            if after and after.get("RJT_YN") == "Y" and (after.get("RJT_RMK") or "") == rmk and others_same:
+                expect[sx] = _soa_fp(post[0], post[1])
                 n["written"] += 1; print(f"    ✍ {sx} s{seq} 리젝체크+리마크 기입 확인")
+            elif after and after.get("RJT_YN") == "Y" and (after.get("RJT_RMK") or "") == rmk:
+                n["written"] += 1; expect[sx] = ("CHANGED",)
+                print(f"    ✍ {sx} s{seq} 기입 확인 · ⚠️ 동시 변경 감지 — 이 SOA 나머지 기입 스킵")
             else:
                 n["wfail"] += 1; print(f"    🚨 {sx} s{seq} 기입 미확인(재조회 불일치) — 이후 기입 중단"); break
 

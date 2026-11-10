@@ -58,7 +58,8 @@ class T(unittest.TestCase):
         def save(pkg, sp, prm):
             st["saves"].append(prm)
             if not fail_after_write:
-                st["lines"][prm["SX_SEQ"]].update(RJT_YN="Y", RJT_RMK=prm["RJT_RMK"], CFM_YN="N")
+                st["lines"][prm["SX_SEQ"]].update(RJT_YN="Y", RJT_RMK=prm["RJT_RMK"], CFM_YN="N",
+                                                   STATUS2=prm["STATUS2"], STATUS_RMK2=prm["STATUS_RMK2"])
             return None
         orig = (S2.select, S2.save, S2.login, S2.make_fx_lookup)
         def restore():
@@ -261,6 +262,26 @@ class T(unittest.TestCase):
             self.assertTrue(S2.nrc_scan("SX", {"SX_SEQ": 1}, []))
         finally:
             R.get_files, R.dl, R._is_pdf_file, SA.cached_texts, SA.pdf_body = o
+
+    def test_multiple_rejects_same_soa_all_written(self):
+        st = self._env([{"SX_SEQ": 1, "REF_NO": "ABCDCA2609010001"}, {"SX_SEQ": 2, "REF_NO": "ABCDCA2609010001"},
+                        {"SX_SEQ": 3, "REF_NO": "ABCDCA2609010001"}],
+                       {"ABCDCA2609010001": {"AOR_CD": "ABCDCA2609010001", "DEPT_CD": "O"}})
+        self.assertEqual(S2.run("TEST"), 0); self.assertEqual(len(st["saves"]), 3)
+
+    def test_concurrent_change_on_written_line_stops_soa(self):
+        st = self._env([{"SX_SEQ": 1, "REF_NO": "ABCDCA2609010001", "SOA_AMT": 10},
+                        {"SX_SEQ": 2, "REF_NO": "ABCDCA2609010001"}],
+                       {"ABCDCA2609010001": {"AOR_CD": "ABCDCA2609010001", "DEPT_CD": "O"}})
+        orig_save = S2.save
+        def save_and_tamper(pkg, sp, prm):
+            r = orig_save(pkg, sp, prm)
+            if prm["SX_SEQ"] == 1:
+                st["lines"][1]["SOA_AMT"] = 999        # 우리 기입과 동시에 같은 라인 금액 변경
+            return r
+        S2.save = save_and_tamper
+        S2.run("TEST")
+        self.assertEqual([p["SX_SEQ"] for p in st["saves"]], [1])   # 2번 라인은 스킵
 
     def test_remark(self):
         r = S2.operational_remark("ABCDCA2609010001", "04")
