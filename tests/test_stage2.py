@@ -20,7 +20,7 @@ class T(unittest.TestCase):
         self.assertEqual(S2.judge_line({"REF_NO": None}, lk, "05")[0], "skip")
 
     def test_operational_rejected(self):
-        v, a, _ = S2.judge_line({"REF_NO": "SVMLCA2609010001", "CFM_YN": "Y"}, lk, "05")
+        v, a, _, _r = S2.judge_line({"REF_NO": "SVMLCA2609010001", "CFM_YN": "Y"}, lk, "05")
         self.assertEqual((v, a), ("reject", "SVMLCA2609010001"))
 
     def test_technical_passes(self):
@@ -58,7 +58,12 @@ class T(unittest.TestCase):
             if not fail_after_write:
                 st["lines"][prm["SX_SEQ"]].update(RJT_YN="Y", RJT_RMK=prm["RJT_RMK"], CFM_YN="N")
             return None
+        orig = (S2.select, S2.save, S2.login, S2.make_fx_lookup)
+        def restore():
+            S2.select, S2.save, S2.login, S2.make_fx_lookup = orig
+        self.addCleanup(restore)
         S2.select, S2.save, S2.login = select, save, lambda: None
+        S2.make_fx_lookup = lambda dt=None: (lambda c: None)
         S2.VERIFY, S2.SL_TP, S2.FM_DM, S2.TO_DM, S2.CAP = True, "05", "202601", "202612", 300
         return st
 
@@ -90,6 +95,70 @@ class T(unittest.TestCase):
         finally:
             S2._fetch_line = orig
         self.assertEqual(st["saves"], [])
+
+    FX = staticmethod(lambda c: {"EUR": (1.1222, "SVMS"), "TRY": (0.0199, "Hana")}.get(c))
+
+    def test_fx_usd_skipped(self):
+        l = {"SOA_CUR_CD": "USD", "SOA_AMT": 100, "AMT_USD": 500}
+        self.assertEqual(S2.judge_line(l, lk, "05", self.FX)[0], "skip")
+        l2 = {"SOA_CUR_CD": "usd", "SOA_AMT": 100, "AMT_USD": 500}
+        self.assertEqual(S2.judge_line(l2, lk, "05", self.FX)[0], "skip")
+
+    def test_fx_within_and_lower_pass(self):
+        ok = {"SOA_CUR_CD": "EUR", "SOA_AMT": 600, "AMT_USD": 700.71}      # 형 캡처 3번 줄(+4%)
+        self.assertEqual(S2.judge_line(ok, lk, "05", self.FX)[0], "pass")
+        low = {"SOA_CUR_CD": "EUR", "SOA_AMT": 600, "AMT_USD": 100}
+        self.assertEqual(S2.judge_line(low, lk, "05", self.FX)[0], "pass")
+        edge = {"SOA_CUR_CD": "EUR", "SOA_AMT": 600, "AMT_USD": 600 * 1.1222 * 1.199}
+        self.assertEqual(S2.judge_line(edge, lk, "05", self.FX)[0], "pass")
+
+    def test_fx_over_rejected(self):
+        l = {"SOA_CUR_CD": "EUR", "SOA_AMT": 600, "AMT_USD": 600 * 1.1222 * 1.2}
+        v, k, _, r = S2.judge_line(l, lk, "05", self.FX)
+        self.assertEqual(v, "reject"); self.assertTrue(r.startswith("FX over-charged: EUR 600.00"))
+        self.assertIn("SVMS", r)
+
+    def test_fx_hana_fallback_and_missing(self):
+        l = {"SOA_CUR_CD": "TRY", "SOA_AMT": 1000, "AMT_USD": 50}
+        v, _, _, r = S2.judge_line(l, lk, "05", self.FX)
+        self.assertEqual(v, "reject"); self.assertIn("Hana", r)
+        self.assertEqual(S2.judge_line({"SOA_CUR_CD": "XYZ", "SOA_AMT": 1, "AMT_USD": 1}, lk, "05", self.FX)[0], "error")
+
+    def test_fx_negative_skipped(self):
+        self.assertEqual(S2.judge_line({"SOA_CUR_CD": "EUR", "SOA_AMT": -600, "AMT_USD": -9000}, lk, "05", self.FX)[0], "skip")
+
+    def test_both_findings_combined(self):
+        l = {"REF_NO": "SVMLCA2609010001", "SOA_CUR_CD": "EUR", "SOA_AMT": 600, "AMT_USD": 2000}
+        v, _, tags, r = S2.judge_line(l, lk, "05", self.FX)
+        self.assertEqual((v, tags), ("reject", "A+B")); self.assertIn(" | FX over-charged", r)
+        self.assertLessEqual(len(r), 240)
+
+    def test_hana_parser(self):
+        html = "<td>미국 USD</td><td>1,360.39</td><td>1.75</td><td>1,313.61</td><td>1.75</td><td>1,350.10</td><td>1,323.90</td><td>0.00</td><td>1,337.00</td><td>5.76</td><td>1.0000</td>" \
+               "<td>일본 JPY (100)</td><td>860.79</td><td>1.75</td><td>831.19</td><td>1.75</td><td>854.28</td><td>837.70</td><td>837.00</td><td>845.99</td><td>3.39</td><td>0.6328</td>" \
+               "<td>튀르키예 TRY</td><td>0.00</td><td>0.00</td><td>0.00</td><td>0.00</td><td>26.91</td><td>26.33</td><td>0.00</td><td>26.62</td><td>39.2</td><td>0.0199</td>"
+        d = S2.parse_hana("기준일 : 2026년11월10일 " + html, "20261110")
+        self.assertAlmostEqual(d["JPY"], 8.4599 / 1337.0, 6); self.assertAlmostEqual(d["TRY"], 26.62 / 1337.0, 6)
+        self.assertEqual(S2.parse_hana("기준일 : 2026년11월09일 " + html, "20261110"), {})   # 다른 날 = 무효
+        self.assertEqual(S2.parse_hana(html, "20261110"), {})                                # 기준일 없음 = 무효
+        no_usd = html.replace("미국 USD", "미국 XXX")
+        self.assertEqual(S2.parse_hana("기준일 : 2026년11월10일 " + no_usd, "20261110"), {})  # USD 교차기준 없음 = 무효
+
+    def test_fx_exact_boundary(self):
+        fx = lambda c: (0.1, "SVMS")
+        self.assertEqual(S2.judge_line({"SOA_CUR_CD": "XXX", "SOA_AMT": 1000, "AMT_USD": 120.00}, lk, "05", fx)[0], "reject")
+        self.assertEqual(S2.judge_line({"SOA_CUR_CD": "XXX", "SOA_AMT": 1000, "AMT_USD": 119.99}, lk, "05", fx)[0], "pass")
+        self.assertEqual(S2.judge_line({"SOA_CUR_CD": "XXX", "SOA_AMT": 1000, "AMT_USD": 120.01}, lk, "05", fx)[0], "reject")
+
+    def test_svms_missing_uses_hana(self):
+        S2_select, S2_hana = S2.select, S2.hana_rates
+        try:
+            S2.select = lambda pkg, sp, prm: {"P_RS": [{"CUR_CD": prm["CUR_CD"], "EX_RATE": 0, "EX_UNIT": 1, "EX_RATE_USD": 1355.7}]}
+            S2.hana_rates = lambda dt: {"TRY": 0.0199}
+            f = S2.make_fx_lookup("20261110")
+            self.assertEqual(f("TRY"), (0.0199, "Hana")); self.assertIsNone(f("BRL"))
+        finally:
+            S2.select, S2.hana_rates = S2_select, S2_hana
 
     def test_remark(self):
         r = S2.operational_remark("SVMLCA2609010001", "04")

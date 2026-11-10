@@ -33,7 +33,8 @@ Claude Code에서는 저장소를 연 뒤 "SOA 1단계 검증 돌려줘"라고 �
 1단계로 금액 대조를 끝낸 뒤 실행합니다. 현재 체크 항목:
 - **Operational AOR**: Tech(05)/Crew(04) SOA 라인의 AOR Req No를 비용청구 AOR 원장에서 조회해 Dept가 Operational이면 리젝 체크 + 리마크
   `Operational AOR: <AOR No> (Dept: Operational) - not chargeable to Technical SOA. Pls move to Operational SOA.`
-- AOR 조회 실패·미발견 라인은 기입하지 않고 "확인필요"로만 보고합니다. 이미 리젝된 라인·관리사 재상신 라인의 리마크는 덮어쓰지 않습니다.
+- **외화 환율 과청구**: Local Currency가 USD가 아닌 라인. 기준 USD = Local Amount × 기준환율(SVMS 환율표 교차, 없으면 하나은행 당일 매매기준율 교차). 청구 USD가 기준의 120% 이상이면 리젝 체크 + `FX over-charged: ...` 리마크(낮은 건 무관)
+- AOR·환율 조회 실패가 1건이라도 있으면 아무것도 기입하지 않고 "확인필요"로만 보고합니다. 이미 리젝된 라인·관리사 재상신 라인의 리마크는 덮어쓰지 않습니다.
 ```bash
 python3 -m soa_verify stage2 --vessel ABCD --from 202601 --to 202612 --dept 05          # 미리보기
 python3 -m soa_verify stage2 --vessel ABCD --from 202601 --to 202612 --dept 05 --save   # 리젝 체크 + 리마크 저장
