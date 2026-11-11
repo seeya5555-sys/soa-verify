@@ -281,16 +281,12 @@ def verify_opex(sx, seq, vsl, l, thorough):
             return "confirm", f"감독출장비 자동확인(N2F, USD {usd(l)}<{TRAVEL_CFM_MAX:.0f})"
     amts = line_amts(l)
     soa_amt = l.get("SOA_AMT"); cur = l.get("SOA_CUR_CD") or "USD"
-    fnnums = []
-    for fl in files:
-        fnnums += fnums(fl.get("FILE_NM", "")) + fnums(fl.get("SAVE_NM", ""))
-    fn_match = any(abs(a - n) <= TOL for a in amts.values() for n in fnnums)
 
 
     pdfs = dl(sx, seq, files)
     if not pdfs:
         LINE_DETAIL[(sx, str(seq))] = {"paths": [], "found_real": None}
-        return ("confirm", f"파일명매칭(다운실패폴백) {soa_amt}{cur}") if fn_match else ("flag", "PDF 다운 실패")
+        return "flag", "PDF 다운 실패"
     best = None
     for p in pdfs:
         r = SA.resolve(p, vsl, soa_amt, cur, usd_amt=usd(l), ident=VSL_IDENT.get(vsl))
