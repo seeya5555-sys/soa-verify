@@ -62,6 +62,18 @@ def _pdf_body_raw(path):
         except Exception: pass
     return txt
 
+OCR_MAX_PAGES = int(os.environ.get("SOA_OCR_MAX_PAGES", "20"))
+
+
+def _pdf_pages(path):
+    try:
+        out = subprocess.run(["pdfinfo", path], capture_output=True, text=True, timeout=30).stdout
+        m = re.search(r"^Pages:\s+(\d+)", out, re.M)
+        return int(m.group(1)) if m else 0
+    except Exception:
+        return 0
+
+
 def ocr_body(path, maxpages=3, dpi=200):
     """스캔본 fallback: pdftoppm dpi → tesseract. 결과는 사이드카 캐시(.ocr{dpi}p{maxpages}.txt)."""
     kind = f"ocr{dpi}p{maxpages}"
@@ -534,6 +546,14 @@ def resolve(path, vessel, line_amt, line_cur, usd_amt=None, ident=None):
     if (not body.strip() or len(body.strip()) < 15 or
             (not _direct_amt(body, la) and (len(body.strip()) < 500 or len(nums) < 8))):
         body = ocr_body(path); src = "ocr"
+
+
+        if la is not None and not _direct_amt(body, la):
+            npg = _pdf_pages(path)
+            if npg > 3:
+                full = ocr_body(path, maxpages=min(npg, OCR_MAX_PAGES))
+                if full.strip() and _direct_amt(full, la):
+                    body = full
     if not body.strip():
         return dict(status="scan", reason="본문 추출불가(스캔+OCR실패) — 사람 vision", src=src)
     nums = body_nums(body)
