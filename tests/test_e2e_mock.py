@@ -106,8 +106,10 @@ class E2E(unittest.TestCase):
         self.assertEqual(rc, 0, out); self.assertEqual(fake.saves, [])               # DRY writes nothing
         self.assertNotIn("확인필요 1", out); self.assertNotIn("does not call", out)
         self.assert_allowed(fake)
-        for proc in ("SP_GET_AOR", "SP_GET_EX_RATE", "SP_GET_OPEX"):
+        for proc in ("SP_GET_AOR", "SP_GET_EX_RATE"):
             self.assertIn(proc, {c[1] for c in fake.calls})
+        # Fund Request is a remittance document, not a cost record — never compared for duplicates.
+        self.assertNotIn("SP_GET_OPEX", {c[1] for c in fake.calls})
 
         rc, out = self.run_cli(fake, "stage2", "--vessel", VSL, "--from", "202601", "--to", "202612", "--save")
         self.assertEqual(rc, 0, out)

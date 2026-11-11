@@ -38,6 +38,17 @@ def groups_cfg():
         _GROUPS_CFG = SG.load_groups()
     return _GROUPS_CFG
 
+def soa_period(today=None):
+    """SOA 조회 기간 (FM_DM, TO_DM) = 직전 해 1월 ~ 올해 12월 (2026-11-10 형 승인: 연도 고정 제거).
+    해가 바뀌어도 전년도 말 SOA와 새해 SOA가 모두 대상에 남는다. env SOA_FM_DM / SOA_TO_DM 로 고정 가능."""
+    import datetime
+    y = (today or datetime.date.today()).year
+    fm, to = os.environ.get("SOA_FM_DM") or f"{y - 1}01", os.environ.get("SOA_TO_DM") or f"{y}12"
+    if not (re.fullmatch(r"20\d{2}(0[1-9]|1[0-2])", fm) and re.fullmatch(r"20\d{2}(0[1-9]|1[0-2])", to) and fm <= to):
+        raise ValueError(f"SOA 조회 기간 오류: {fm}~{to}")
+    return fm, to
+
+
 def group_keys():
     """유효 그룹 키(구 GROUPS 상수 대체 — usage 검증·순회용)."""
     return SG.group_keys(groups_cfg())
@@ -105,7 +116,7 @@ def get_files(fref):
 def aor_doc(vsl, ref_no):
     if not ref_no: return None
     r = select("PKG_CM_REF", "SP_GET_REF_DOC",
-               {"FM_DT": "20240101", "TO_DT": "20261231", "REF_TP": "COAR", "VSL_CD": vsl, "REF_NO": ref_no})
+               {"FM_DT": "20240101", "TO_DT": soa_period()[1][:4] + "1231", "REF_TP": "COAR", "VSL_CD": vsl, "REF_NO": ref_no})
     rs = r.get("P_RS", []) or []
     return rs[0] if rs else None
 
@@ -462,8 +473,12 @@ def review(group):
     thorough_group = SG.is_thorough_group(group, groups_cfg())
 
     hdr = select("PKG_CO_SLIP_EX", "SP_GET_SOA",
-                 {"VSL_CD": "M", "FM_DM": "202601", "TO_DM": "202612", "SOA_OW_COMP_ID": "", "VSL_STATUS": "1"})
+                 {"VSL_CD": "M", "FM_DM": soa_period()[0], "TO_DM": soa_period()[1], "SOA_OW_COMP_ID": "", "VSL_STATUS": "1"})
     rows = [r for r in (hdr.get("P_RS", []) or []) if (r.get("SX_CD") or "")[:4] in targets and r.get("STATUS") == "S"]
+    _only = os.environ.get("SOA_REVIEW_ONLY_SX")
+    if _only is not None:
+        _only = {x for x in _only.split(",") if x}
+        rows = [r for r in rows if r.get("SX_CD") in _only]
 
 
 
@@ -510,7 +525,7 @@ def review(group):
 
 
         opr = select_opt("PKG_CO_SLIP_EX", "SP_GET_SOA_OPR",
-                         {"VSL_CD": "M", "FM_DM": "202601", "TO_DM": "202612", "SOA_OW_COMP_ID": "", "VSL_STATUS": "1"})
+                         {"VSL_CD": "M", "FM_DM": soa_period()[0], "TO_DM": soa_period()[1], "SOA_OW_COMP_ID": "", "VSL_STATUS": "1"})
         for r in ((opr or {}).get("P_RS", []) or []):
             if (r.get("SX_CD") or "")[:4] in targets and r.get("STATUS") == "S":
                 out["oper_notify"].append({"sx": r.get("SX_CD"), "subj": (r.get("SUBJ") or "")[:40]})

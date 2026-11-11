@@ -23,8 +23,15 @@ from svms import login, select, save
 
 VERIFY = os.environ.get("VERIFY") == "1"
 SL_TP = os.environ.get("SL_TP", "05")
-FM_DM = os.environ.get("FM_DM", "202601")
-TO_DM = os.environ.get("TO_DM", "202612")
+def default_period(today=None):
+    """기본 조회 기간 (FM_DM, TO_DM) = 직전 해 1월 ~ 올해 12월 (1차 soa_review.soa_period와 같은 규칙)."""
+    import datetime
+    y = (today or datetime.date.today()).year
+    return os.environ.get("SOA_FM_DM") or f"{y - 1}01", os.environ.get("SOA_TO_DM") or f"{y}12"
+
+
+FM_DM = os.environ.get("FM_DM") or default_period()[0]
+TO_DM = os.environ.get("TO_DM") or default_period()[1]
 try:
     CAP = int(os.environ.get("CAP", "300"))
 except (TypeError, ValueError):
@@ -294,7 +301,7 @@ HANA_URL = "https://www.kebhana.com/cms/rate/wpfxd651_01i_01.do"
 
 def _today():
     import datetime
-    return (datetime.datetime.utcnow() + datetime.timedelta(hours=9)).strftime("%Y%m%d")
+    return datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).strftime("%Y%m%d")
 
 
 def svms_usd_rate(cur, dt):
@@ -546,6 +553,9 @@ def _write_result(res):
 def run(vsl):
     if SL_TP not in DEPT_LABEL:
         print(f"🚨 SL_TP={SL_TP} 불가(04/05만)"); return 2
+    _ym = r"20\d{2}(0[1-9]|1[0-2])"
+    if not (re.fullmatch(_ym, str(FM_DM)) and re.fullmatch(_ym, str(TO_DM)) and FM_DM <= TO_DM):
+        print(f"🚨 조회 기간 오류: {FM_DM}~{TO_DM} (yyyyMM, 시작<=끝)"); return 2
     login()
     cache = {}
 
@@ -582,7 +592,6 @@ def run(vsl):
     n = {"aor": 0, "pass": 0, "reject": 0, "already": 0, "resub": 0, "error": 0, "written": 0, "wfail": 0}
     todo = []
     dup_idx = None
-    fund_idx = {}
 
     for r in sorted(rows, key=lambda x: x.get("SL_DM") or ""):
         sx = r.get("SX_CD")
@@ -606,16 +615,11 @@ def run(vsl):
                 dup_idx = build_dup_index(vsl, dms[0], dms[-1])
             except BaseException as e:
                 dup_idx = {}; warns.append(f"중복 인보이스 SOA 이력 조회 실패 → E(SOA) 미검사: {str(e)[:40]}")
-            try:
-                fund_idx = build_fund_index(vsl, dms[0], dms[-1])
-            except BaseException as e:
-                fund_idx = {}; warns.append(f"비용청구 조회 실패 → E(비용청구) 미검사: {str(e)[:40]}")
         for l in lines:
             nrc = nrc_scan(sx, l, warns) if NRC_SCAN else None
             dup = find_dup(dup_idx, sx, l, str(r.get("SL_DM") or "")) if dup_idx else None
-            if not dup:
-                fdup = find_fund_dup(fund_idx, l, str(r.get("SL_DM") or ""))
-                dup = fdup if fdup else (dup if dup is not None else fdup)
+
+
             verdict, aor, note, rmk = judge_line(l, aor_lookup, SL_TP, fx_lookup, mf, nrc, dup)
             if verdict == "skip":
                 continue
