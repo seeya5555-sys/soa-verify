@@ -89,7 +89,90 @@ def is_nrc_text(txt):
 
 FX_OVER = 1.20
 FX_REMARK_PREFIX = "FX over-charged"
-OWN_PREFIXES = (OPR_REMARK_PREFIX, FX_REMARK_PREFIX, MF_REMARK_PREFIX, NRC_REMARK, "Duplicate invoice")
+AOROPEX_REMARK_PREFIX = "AOR filed as OPEX"
+AORINV_REMARK_PREFIX = "AOR invoice no"
+OWN_PREFIXES = (OPR_REMARK_PREFIX, FX_REMARK_PREFIX, MF_REMARK_PREFIX, NRC_REMARK, "Duplicate invoice",
+                AOROPEX_REMARK_PREFIX, AORINV_REMARK_PREFIX)
+
+
+
+
+
+
+
+AORDOC_MODE = os.environ.get("SOA_STAGE2_AORDOC", "1")
+AOR_MARK = re.compile(r"agreed?\s+over\s*-?\s*run\s+expense", re.I)
+AOR_CODE_ANY = re.compile(r"\b([A-Z]{4}CA\d{10})\b")
+COVER_REF = re.compile(r"\bRef(?:erence)?\s*(?:No\.?|#)?\s*[:.]\s*([A-Z0-9][A-Z0-9/\-.]{3,30})", re.I)
+VENDOR_INV = re.compile(r"\bInvoice[ \t]*(?:#|No\.?|Number|Nr\.?)[ \t]*[:.#]?[ \t]*([A-Z0-9][A-Z0-9/\-. ]{2,30}?)(?=[ \t]{2,}|\n|$|[ \t]+(?:Date|Due|VAT|PO)\b)", re.I | re.M)
+
+
+def _norm_no(v):
+    return re.sub(r"[^A-Z0-9]", "", str(v or "").upper())
+
+
+def aor_doc_check(line, texts, aor_lookup, vsl, vendor_inv_llm=None):
+    """순수 판정. texts=첨부 본문들. returns (findings[(tag, remark)], is_aor, info)."""
+    out, info = [], {}
+    body = "\n".join(t for t in (texts or []) if t)
+    tp = str(line.get("SOA_OPEX_TP") or "").upper()
+    inv = str(line.get("INV_NO") or "").strip()
+    is_aor = tp == "A"
+    if tp == "O" and body.strip() and AOR_MARK.search(body):
+        for code in dict.fromkeys(AOR_CODE_ANY.findall(body.upper())):
+            if code[:4] != vsl:
+                continue
+            row = aor_lookup(code)
+            if row:
+                info["aor"] = code
+                out.append(("F", f"{AOROPEX_REMARK_PREFIX}: AOR doc {code} attached - pls change Cat-II to AOR "
+                                 f"and enter AOR Req No"))
+                is_aor = True
+                break
+    if is_aor:
+
+        cover_pages = [pg for pg in re.split(r"\f", body) if AOR_MARK.search(pg)]
+        refs = {_norm_no(m) for pg in cover_pages for m in COVER_REF.findall(pg)}
+        refs.discard("")
+        bad_cover = bool(inv) and _norm_no(inv) in refs
+        if bad_cover or not inv:
+            vno = None
+            if body.strip():
+
+                vendor_body = "\f".join(pg for pg in re.split(r"\f", body) if not AOR_MARK.search(pg))
+                vnos = [v.strip(" .") for v in VENDOR_INV.findall(vendor_body)]
+                vnos = [v for v in vnos if _norm_no(v) and _norm_no(v) not in refs and not AOR_CODE_ANY.search(v.upper())]
+                if not vnos and vendor_inv_llm:
+                    v = vendor_inv_llm(body)
+                    if _vendor_no_ok(v, body, refs):
+                        vnos = [v]
+                vno = vnos[0] if vnos else None
+            info["vendor_inv"] = vno
+            what = f"SOA {inv} = AOR cover page Ref" if bad_cover else "blank in SOA"
+            tail = f"vendor invoice {vno}" if vno else "vendor invoice no. required"
+            out.append(("G", f"{AORINV_REMARK_PREFIX}: {what} / {tail}"))
+    return out, is_aor, info
+
+
+def _vendor_no_ok(v, body, refs):
+    """LLM 후보 검증: 커버 Ref 아님 + 본문에 번호 경계로 실재(부분 문자열 금지). 불확실=False(번호 제시 안 함)."""
+    v = str(v or "").strip()
+    if len(_norm_no(v)) < 3 or _norm_no(v) in refs or AOR_CODE_ANY.search(v.upper()):
+        return False
+    return bool(re.search(r"(?<![A-Z0-9])" + re.escape(v) + r"(?![A-Z0-9])", body, re.I))
+
+
+def vendor_inv_llm(body):
+    """정규식이 업체 인보이스 번호를 못 찾을 때만 쓰는 Haiku 보조. 실패=None(판정은 코드가 함)."""
+    try:
+        from llm_router import llm_json
+        d = llm_json("아래 문서에서 '업체(vendor)가 발행한 인보이스 번호' 하나만 찾아라. 관리사 커버페이지/Debit note 의 "
+                     "Ref 번호는 제외. 없으면 null. JSON 한 줄만: {\"vendor_invoice_no\": \"...\"|null}\n\n" + body[:4000],
+                     timeout=120)
+        v = d.get("vendor_invoice_no")
+        return str(v).strip() if v else None
+    except Exception:
+        return None
 
 
 def fx_remark(cur, amt, usd, rate, src):
@@ -106,8 +189,9 @@ def _num(v):
 
 
 REMARK_MAX = 240
-_ORDER = {"D": 0, "E": 1, "A": 2, "C": 3, "B": 4}
-_TAGNAME = {"D": "NRC invoice", "E": "Duplicate invoice", "A": "Operational AOR", "C": "Mgmt fee over SMA", "B": "FX over-charged"}
+_ORDER = {"D": 0, "E": 1, "F": 2, "G": 3, "A": 4, "C": 5, "B": 6}
+_TAGNAME = {"D": "NRC invoice", "E": "Duplicate invoice", "A": "Operational AOR", "C": "Mgmt fee over SMA", "B": "FX over-charged",
+            "F": AOROPEX_REMARK_PREFIX, "G": AORINV_REMARK_PREFIX}
 
 
 def _short(tag, full):
@@ -119,6 +203,10 @@ def _short(tag, full):
         return f"FX over-charged {m.group(1)} {m.group(2)}->USD {m.group(3)} ({m.group(4)})" if m else "FX over-charged"
     if tag == "E":
         return full.replace("Duplicate invoice: ", "Duplicate invoice ")
+    if tag == "F":
+        m = re.search(r"[A-Z]{4}CA\d{10}", full); return f"AOR filed as OPEX {m.group(0) if m else ''}".strip()
+    if tag == "G":
+        return full.replace("AOR cover page Ref", "cover Ref").replace("vendor invoice no. required", "vendor inv no req")
     if tag == "C":
         m = re.search(r"charged USD ([\d,.]+) vs contract USD ([\d,.]+)", full)
         return f"Mgmt fee over SMA {m.group(1)} vs {m.group(2)}" if m else "Mgmt fee over SMA"
@@ -162,7 +250,7 @@ def combine_remarks(findings):
     return " | ".join(_TAGNAME[t] for t, _ in fs)
 
 
-def judge_line(line, aor_lookup, sl_tp, fx_lookup=None, mf=None, nrc=None, dup=None):
+def judge_line(line, aor_lookup, sl_tp, fx_lookup=None, mf=None, nrc=None, dup=None, aordoc=None):
     """라인 1개 판정(순수). aor_lookup(aor_cd)->row|None / fx_lookup(cur)->(usd_per_unit, src)|None.
     returns (verdict, key, note, remark): verdict ∈ skip|pass|reject|already|resub|error"""
     findings, errors, checked = [], [], []
@@ -211,6 +299,10 @@ def judge_line(line, aor_lookup, sl_tp, fx_lookup=None, mf=None, nrc=None, dup=N
         checked.append("DUP")
         if dup:
             findings.append(("E", dup_remark(*dup)))
+
+    if aordoc is not None:
+        checked.append("AORDOC")
+        findings.extend(aordoc)
     key = " ".join(checked) or None
     if not checked:
         return "skip", None, "대상 아님", None
@@ -531,6 +623,27 @@ def _nrc_scan(sx, l, warns):
     return False if paths else None
 
 
+def line_texts(sx, l, warns):
+    """라인 첨부 PDF 본문 목록(1차 캐시 재사용, 없으면 pdftotext 1회). 실패=None(F/G 미검사, warn)."""
+    import soa_review as R
+    import soa_amount as SA
+    seq = l.get("SX_SEQ")
+    try:
+        files = [f for f in R.get_files(l.get("FILE_REF_NO") or (str(sx) + str(seq))) if R._is_pdf_file(f)]
+        if not files:
+            return []
+        out = []
+        for p in R.dl(sx, seq, files):
+            cached = SA.cached_texts(p)
+            out.extend(cached.values())
+            if cached.get("text") is None:
+                out.append(SA.pdf_body(p))
+        return out
+    except BaseException as e:
+        warns.append(f"{sx} s{seq} 첨부 본문 확보 실패 → F/G 미검사: {str(e)[:40]}")
+        return None
+
+
 def reject_line(sx, seq, rmk):
     return save("PKG_CO_SLIP_EX", "SP_SET_SOA_D_STATUS",
                 {"SX_CD": sx, "SX_SEQ": seq, "CFM_YN": "N", "RJT_YN": "Y",
@@ -557,6 +670,11 @@ def run(vsl):
     if not (re.fullmatch(_ym, str(FM_DM)) and re.fullmatch(_ym, str(TO_DM)) and FM_DM <= TO_DM):
         print(f"🚨 조회 기간 오류: {FM_DM}~{TO_DM} (yyyyMM, 시작<=끝)"); return 2
     login()
+    if SL_TP == "04":
+        import soa_review as R
+        _own = R.my_vessels() or {}
+        if _own.get(vsl) == "001":
+            print(f"⏭ {vsl}: 장금 owner Crew SOA = 2차 검증 대상 아님"); return 0
     cache = {}
 
     def aor_lookup(aor_cd):
@@ -620,7 +738,23 @@ def run(vsl):
             dup = find_dup(dup_idx, sx, l, str(r.get("SL_DM") or "")) if dup_idx else None
 
 
-            verdict, aor, note, rmk = judge_line(l, aor_lookup, SL_TP, fx_lookup, mf, nrc, dup)
+            aordoc = None
+            if AORDOC_MODE in ("1", "shadow") and str(l.get("SOA_OPEX_TP") or "").upper() in ("A", "O") \
+                    and l.get("SOA_TP") != "A":
+                texts = line_texts(sx, l, warns)
+                if texts is not None or str(l.get("SOA_OPEX_TP") or "").upper() == "A":
+                    try:
+                        fg, _is_aor, _info = aor_doc_check(l, texts, aor_lookup, vsl, vendor_inv_llm)
+                    except BaseException as e:
+                        fg = []; warns.append(f"{sx} s{l.get('SX_SEQ')} F/G 검사 예외: {str(e)[:40]}")
+                    if fg and AORDOC_MODE == "shadow":
+                        print(f"    👁 s{l.get('SX_SEQ'):<4} [{l.get('SOA_CUR_CD')}{l.get('SOA_AMT')}] F/G(섀도·미반영): "
+                              + " | ".join(r for _, r in fg))
+                        res.setdefault("aordoc_shadow", []).append(
+                            {"sx": sx, "seq": str(l.get("SX_SEQ")), "remarks": [r for _, r in fg]})
+                    elif fg:
+                        aordoc = fg
+            verdict, aor, note, rmk = judge_line(l, aor_lookup, SL_TP, fx_lookup, mf, nrc, dup, aordoc)
             if verdict == "skip":
                 continue
             n["aor"] += 1; n[verdict] += 1
