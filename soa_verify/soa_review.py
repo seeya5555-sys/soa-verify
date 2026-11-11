@@ -152,8 +152,11 @@ def _fref(sx, seq, line):
     return line.get("FILE_REF_NO") or (str(sx) + str(seq))
 
 def _pdf_path(sx, seq, fl):
+    """캐시 경로. 파일 고유번호(FILE_NO)를 넣어, 관리사가 같은 파일명으로 첨부를 교체해도 옛 캐시를 쓰지 않는다(11-11)."""
     fn = fl.get("FILE_NM") or "f"
-    return os.path.join(PDFDIR, re.sub(r'[^\w.\-]', '_', f"{sx}_{seq}_{fn}")[:120])
+    fno = str(fl.get("FILE_NO") or fl.get("FILE_CD") or "").strip()
+    stem = f"{sx}_{seq}_{fno}_{fn}" if fno else f"{sx}_{seq}_{fn}"
+    return os.path.join(PDFDIR, re.sub(r'[^\w.\-]', '_', stem)[:120])
 
 def _is_pdf_file(fl):
     return ((fl.get("FILE_EXT") or "").lower() in ("", "pdf") and
@@ -287,12 +290,17 @@ def verify_opex(sx, seq, vsl, l, thorough):
     if not pdfs:
         LINE_DETAIL[(sx, str(seq))] = {"paths": [], "found_real": None}
         return "flag", "PDF 다운 실패"
-    best = None
+    best = None; llm_fail = None
     for p in pdfs:
         r = SA.resolve(p, vsl, soa_amt, cur, usd_amt=usd(l), ident=VSL_IDENT.get(vsl))
         if r["status"] == "clean":
             return "confirm", r["reason"]
+        if r.get("basis") == "llm-error":
+            llm_fail = r
         best = r
+    if llm_fail:
+        LINE_DETAIL[(sx, str(seq))] = {"paths": pdfs, "found_real": None}
+        return "flag", llm_fail["reason"]
 
     rs = SA.resolve_sum(pdfs, vsl, soa_amt, cur)
     if rs and rs["status"] == "clean":
@@ -322,11 +330,15 @@ def verify_aor(sx, seq, vsl, l):
 
 
     pdfs = dl(sx, seq, files)
+    llm_fail = False
     for p in pdfs:
         r = SA.resolve(p, vsl, l.get("SOA_AMT"), l.get("SOA_CUR_CD") or "USD", usd_amt=usd(l), ident=VSL_IDENT.get(vsl))
         if r["status"] == "clean":
             return "confirm", f"AOR DN 본문확인 {r['reason']}", subj
+        llm_fail = llm_fail or r.get("basis") == "llm-error"
     LINE_DETAIL[(sx, str(seq))] = {"paths": pdfs, "found_real": None}
+    if llm_fail:
+        return "flag", "AOR DN 본문 확인 중 LLM 실행실패 — 사람확인", subj
     return "flag", "AOR DN 금액 미확인", subj
 
 def _empty_frag():

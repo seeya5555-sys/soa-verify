@@ -659,7 +659,9 @@ def resolve(path, vessel, line_amt, line_cur, usd_amt=None, ident=None):
         return dict(status="clean", basis="high-value-competition",
                     reason=f"고액금액 경쟁 확인 요: 라인 {la} 본문 직접확인 but GPT 경쟁금액 {hamt} ({basis}) conf={conf}",
                     src=src, found=hamt, review_remark="고액금액 경쟁 확인 요")
-    if direct and llm_error and not strong_direct:
+    if direct and llm_error:
+
+
         return dict(status="flag", basis="llm-error",
                     reason=f"라인 {la} 본문직접매칭 but LLM 실행실패/비JSON — 사람확인", src=src)
     if direct and not haiku_strong_reject:
@@ -696,6 +698,9 @@ def resolve(path, vessel, line_amt, line_cur, usd_amt=None, ident=None):
             return dict(status="clean", basis="vision-amount",
                         reason=f"스캔 원본 vision 재판독으로 라인 {la} 직접확인: {vr.get('evidence')}",
                         src="vision", found=vr.get("amount"))
+    if llm_error:
+        return dict(status="flag", basis="llm-error",
+                    reason=f"라인 {la} 본문 미확인 · LLM 실행실패 — 사람확인", src=src)
 
     found_txt = f"{hamt}" if h_real else (f"{hamt}(AI추정·본문없음)" if hamt is not None else "None")
     return dict(status="flag", basis=basis,
