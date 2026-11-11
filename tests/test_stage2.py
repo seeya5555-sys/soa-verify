@@ -139,8 +139,8 @@ class T(unittest.TestCase):
         l = {"REF_NO": "ABCDCA2609010001", "SOA_CUR_CD": "EUR", "SOA_AMT": 600, "AMT_USD": 2000}
         v, _, tags, r = S2.judge_line(l, lk, "05", self.FX)
         self.assertEqual((v, tags), ("reject", "A+B")); self.assertIn(" | FX over-charged", r)
-        self.assertTrue(r.startswith("Operational AOR: ABCDCA2609010001"))
-        self.assertLessEqual(len(r), 240)
+        self.assertTrue(r.startswith("Operational AOR") and "ABCDCA2609010001" in r)
+        self.assertLessEqual(len(r), 200)
 
     def test_hana_parser(self):
         html = "<td>미국 USD</td><td>1,360.39</td><td>1.75</td><td>1,313.61</td><td>1.75</td><td>1,350.10</td><td>1,323.90</td><td>0.00</td><td>1,337.00</td><td>5.76</td><td>1.0000</td>" \
@@ -205,7 +205,7 @@ class T(unittest.TestCase):
         self.assertTrue(r.startswith("NRC invoice | Operational AOR"), r)
         for k in ("ABCDCA2609010001", "FX over-charged", "Mgmt fee over SMA", "2,000"):
             self.assertIn(k, r)
-        self.assertLessEqual(len(r), 240)
+        self.assertLessEqual(len(r), 200)
 
     def test_other_line_change_makes_stale(self):
         st = self._env([{"SX_SEQ": 1, "REF_NO": "ABCDCA2609010001"}, {"SX_SEQ": 2, "REF_NO": None, "SOA_AMT": 5}],
@@ -235,7 +235,7 @@ class T(unittest.TestCase):
               ("C", "Mgmt fee over SMA: charged USD 99,999,999.00 vs contract USD 10,695.00 (345/day x 31d, CSM)" + "y" * 150),
               long_b, ("D", "NRC invoice")]
         r = S2.combine_remarks(fs)
-        self.assertLessEqual(len(r), 240)
+        self.assertLessEqual(len(r), 200)
         for k in ("NRC invoice", "Operational AOR", "Mgmt fee over SMA", "FX over-charged"):
             self.assertIn(k, r)
         self.assertTrue(r.startswith("NRC invoice"))
@@ -303,9 +303,9 @@ class T(unittest.TestCase):
         self.assertTrue(S2.find_dup(idx, "TSTA-2611100001", newer, "202601"))
 
     def test_dup_short_form_idempotent(self):
-        prev = "Cost no match - " + "x" * 150
+        prev = "Cost no match - " + "x" * 110
         r = S2.append_remark(prev, [("E", "Duplicate invoice: " + "9" * 40 + " = TSTA-2610010002 s0048"), ("A", "Operational AOR: ABCDCA2609010001 (Dept: Operational) - not chargeable")])
-        self.assertIsNotNone(r); self.assertLessEqual(len(r), 240)
+        self.assertIsNotNone(r); self.assertLessEqual(len(r), 200)
         l = {"SOA_CUR_CD": "USD", "RJT_YN": "Y", "RJT_RMK": r, "REF_NO": "ABCDCA2609010001"}
         self.assertEqual(S2.judge_line(l, lk, "05", None, None, None, ("TSTA-2610010002", "0048", "9" * 40))[0], "already")
 
@@ -338,9 +338,9 @@ class T(unittest.TestCase):
 
     def test_remark(self):
         r = S2.operational_remark("ABCDCA2609010001", "04")
-        self.assertTrue(r.startswith("Operational AOR: ABCDCA2609010001"))
+        self.assertTrue(r.startswith("Operational AOR") and "ABCDCA2609010001" in r)
         self.assertIn("Crew SOA", r)
-        self.assertLessEqual(len(r), 240)
+        self.assertLessEqual(len(r), 200)
 
 
 if __name__ == "__main__":

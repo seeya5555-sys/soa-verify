@@ -49,7 +49,7 @@ def is_aor_ref(ref_no):
 def operational_remark(aor_cd, sl_tp):
     dept = DEPT_LABEL.get(sl_tp, "Tech/Crew")
     return (f"{OPR_REMARK_PREFIX}: {aor_cd} (Dept: Operational) - not chargeable to {dept} SOA. "
-            f"Pls move to Operational SOA.")[:240]
+            f"Pls move to Operational SOA.")[:200]
 
 
 MF_EXP_CD = "080101"
@@ -194,7 +194,7 @@ def _num(v):
         return None
 
 
-REMARK_MAX = 240
+REMARK_MAX = 200
 _ORDER = {"D": 0, "E": 1, "F": 2, "G": 3, "H": 4, "A": 5, "C": 6, "B": 7}
 _TAGNAME = {"D": "NRC invoice", "E": "Duplicate invoice", "A": "Operational AOR", "C": "Mgmt fee over SMA", "B": "FX over-charged",
             "F": AOROPEX_REMARK_PREFIX, "G": AORINV_REMARK_PREFIX, "H": "Cat-II should be Pre-delivery"}
@@ -878,7 +878,7 @@ def hdr_same(a, b):
 def reject_line(sx, seq, rmk):
     return save("PKG_CO_SLIP_EX", "SP_SET_SOA_D_STATUS",
                 {"SX_CD": sx, "SX_SEQ": seq, "CFM_YN": "N", "RJT_YN": "Y",
-                 "RJT_RMK": rmk[:240], "STATUS2": "N", "STATUS_RMK2": None})
+                 "RJT_RMK": rmk[:REMARK_MAX], "STATUS2": "N", "STATUS_RMK2": None})
 
 
 def _write_result(res):
