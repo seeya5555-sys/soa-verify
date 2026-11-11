@@ -60,6 +60,12 @@ NRC_PAT = re.compile(r"national\s+response\s+corp|nrc\s+opa\s*'?\s*90|opa\s*'?\s
 MF_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "soa_mgmt_fee.json")
 
 
+def _is_sma_fee(line):
+    """SMA 관리비 대조 대상: 080101 Debit 이고 AOR(Cat-II=A) 아님."""
+    return (str(line.get("EXP_CD") or "") == MF_EXP_CD and line.get("SOA_TP", "D") == "D"
+            and str(line.get("SOA_OPEX_TP") or "").upper() != "A")
+
+
 def mf_remark(charged, exp_usd, desc):
     return f"{MF_REMARK_PREFIX}: charged USD {charged:,.2f} vs contract USD {exp_usd:,.2f} ({desc})"
 
@@ -284,7 +290,7 @@ def judge_line(line, aor_lookup, sl_tp, fx_lookup=None, mf=None, nrc=None, dup=N
             if D(str(usd)) >= D(str(amt)) * D(repr(rate)) * D("1.20"):
                 findings.append(("B", fx_remark(cur, amt, usd, rate, src)))
 
-    if mf is not None and str(line.get("EXP_CD") or "") == MF_EXP_CD:
+    if mf is not None and _is_sma_fee(line):
         checked.append("MF")
         exp_usd, charged, desc = mf
         if charged > exp_usd + MF_TOL:
@@ -944,7 +950,9 @@ def run(vsl):
         soa_fp = _soa_fp(r, lines)
         res["fp"][sx] = lines_fp(lines)
         mf = None
-        fee_lines = [l for l in lines if str(l.get("EXP_CD") or "") == MF_EXP_CD]
+
+
+        fee_lines = [l for l in lines if _is_sma_fee(l)]
         if mf_rec and fee_lines:
             if any(str(l.get("SOA_CUR_CD") or "").upper() not in ("USD", "") for l in fee_lines):
                 warns.append(f"{sx} 관리비 비USD 청구 → C 미검사(사람 확인)")
