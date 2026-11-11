@@ -742,13 +742,13 @@ def summarize_texts(texts, exp_nm="", room=90):
                      "CO2 recharge, 3 cyl.'). No amounts, currency, invoice numbers, dates or vessel name. If the document does not describe "
                      "the items/services, return null (do not describe the document itself). Account hint: "
                      f"{exp_nm}. Reply JSON only: {{\"summary\": \"...\" | null}}\n\n" + body[:3500], timeout=120)
-        v = d.get("summary") if isinstance(d, dict) and not d.get("_llm_error") else None
-        v = str(v).strip() if v else None
+        if not isinstance(d, dict) or d.get("_llm_error") or "summary" not in d:
+            return None
+        v = d.get("summary")
+        v = str(v).strip() if v else ""
         if v and _NO_DESC.search(v):
             v = ""
     except Exception:
-        return None
-    if v is None:
         return None
     with _SUM_LOCK:
         try:
@@ -763,6 +763,92 @@ def summarize_texts(texts, exp_nm="", room=90):
         except OSError:
             pass
     return v
+
+
+SUM_VISION = os.environ.get("SOA_STAGE2_SUMMARY_VISION", "1") == "1"
+
+
+def vision_summary(path, exp_nm="", room=90, maxpages=2):
+    """PDF 첫 페이지들을 이미지로 읽어 적요 1줄. 텍스트 요약이 비었을 때만 호출. 캐시(파일 sha256). 실패/설명없음=None."""
+    import hashlib, json, tempfile, glob, subprocess, shutil
+    import soa_amount as SA
+    try:
+        key = "v:" + hashlib.sha256(open(path, "rb").read()).hexdigest()
+    except OSError:
+        return None
+    cpath = _sum_cache_path()
+    with _SUM_LOCK:
+        try:
+            cache = json.load(open(cpath))
+        except (OSError, ValueError):
+            cache = {}
+    if key in cache:
+        v = cache[key]
+        return None if (not v or _NO_DESC.search(v)) else v
+    tmp = tempfile.mkdtemp(prefix="soasum_")
+    v = None
+    try:
+        stem = os.path.join(tmp, "page")
+        subprocess.run(["pdftoppm", "-png", "-r", "150", "-f", "1", "-l", str(maxpages), path, stem],
+                       capture_output=True, timeout=120)
+        pngs = sorted(glob.glob(stem + "*.png"))
+        if not pngs:
+            return None
+        ask = ("Read the attached invoice page image(s). Summarize what is charged for as ONE short English phrase for an "
+               f"accounting remark (max {room} characters): the actual items/services/work. No amounts, currency, invoice "
+               f"numbers, dates or vessel name. Account hint: {exp_nm}. If no items/services are described, return null. "
+               'Reply JSON only: {"summary": "..." | null}')
+        model = os.environ.get("SOA_SUMMARY_VISION_MODEL", "").strip() or \
+            (SA.review_model() if SA._selected_review_is_openai() else "haiku")
+        if SA._is_openai_model_name(model):
+            model = model if model.startswith("openai/") else "openai/" + model
+            cmd = ["openclaw", "infer", "model", "run", "--json", "--model", model, "--prompt", ask]
+            for pth in pngs:
+                cmd += ["--file", pth]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            if r.returncode != 0:
+                return None
+            d = SA._infer_json_obj(r.stdout)
+        else:
+            names = ", ".join(os.path.basename(x) for x in pngs)
+            r = subprocess.run(["claude", "-p", f"Use the Read tool on these images in {tmp}: {names}. " + ask,
+                                "--model", model, "--add-dir", tmp, "--allowedTools", "Read"],
+                               capture_output=True, text=True, timeout=180)
+            if r.returncode != 0:
+                return None
+            d = SA._json_obj(r.stdout)
+        if not isinstance(d, dict) or "summary" not in d:
+            return None
+        v = d.get("summary")
+        v = str(v).strip() if v else ""
+        if v and _NO_DESC.search(v):
+            v = ""
+    except Exception:
+        return None
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    with _SUM_LOCK:
+        try:
+            try:
+                cache = json.load(open(cpath))
+            except (OSError, ValueError):
+                cache = {}
+            cache[key] = v
+            with open(cpath + ".tmp", "w") as f:
+                json.dump(cache, f)
+            os.replace(cpath + ".tmp", cpath)
+        except OSError:
+            pass
+    return v or None
+
+
+def line_pdf_paths(sx, l):
+    import soa_review as R
+    try:
+        files = [f for f in R.get_files(l.get("FILE_REF_NO") or (str(sx) + str(l.get("SX_SEQ")))) if R._is_pdf_file(f)]
+        return R.dl(sx, l.get("SX_SEQ"), files) if files else []
+    except BaseException:
+        return []
 
 
 def hdr_same(a, b):
@@ -994,7 +1080,13 @@ def run(vsl):
                 if room < SUM_MIN:
                     return l, None
                 t = line_texts(sx, l, warns)
-                return l, (summarize_texts(t, l.get("EXP_NM") or "", room) if t else None)
+                sm = summarize_texts(t, l.get("EXP_NM") or "", room) if t else None
+                if not sm and SUM_VISION:
+                    for pth in line_pdf_paths(sx, l)[:2]:
+                        sm = vision_summary(pth, l.get("EXP_NM") or "", room)
+                        if sm:
+                            break
+                return l, sm
             with ThreadPoolExecutor(max_workers=4) as ex:
                 got = list(ex.map(_one, cand))
             upd, exp = {}, {}
