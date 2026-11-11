@@ -288,7 +288,7 @@ def build_parser():
     c.add_argument("--to", dest="to", default=to0)
     c.add_argument("--save", action="store_true")
     c.set_defaults(fn=cmd_cleanup)
-    s2 = sub.add_parser("stage2", help="stage 2: Operational AOR, FX >=120%%, mgmt fee vs SMA, NRC invoice")
+    s2 = sub.add_parser("stage2", help="stage 2: NRC invoice, duplicate invoice, AOR filed as OPEX, AOR invoice no, Operational AOR, mgmt fee vs SMA, FX >=120%%")
     s2.add_argument("--vessel", required=True)
     s2.add_argument("--from", dest="fm", default=fm0)
     s2.add_argument("--to", dest="to", default=to0)

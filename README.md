@@ -38,9 +38,11 @@ Claude Code에서는 저장소를 연 뒤 "SOA 1단계 검증 돌려줘"라고 �
 - **외화 환율 과청구**: Local Currency가 USD가 아닌 라인. 기준 USD = Local Amount × 기준환율(SVMS 환율표 교차, 없으면 하나은행 당일 매매기준율 교차). 청구 USD가 기준의 120% 이상이면 리젝 체크 + `FX over-charged: ...` 리마크(낮은 건 무관)
 - **관리비 SMA 초과**: 비용코드 080101 라인의 SOA 합계가 계약(일 단가 × 해당 월 일수 또는 월 고정액)보다 $1 넘게 높으면 리젝 + `Mgmt fee over SMA: ...`. 계약표는 저장소에 내장(`soa_verify/soa_mgmt_fee.json`, 선박명 기준 184척) — 받으면 바로 사용. 다른 표를 쓰려면 `SOA_MGMT_FEE_DB` 경로 지정. 표에 없는 선박은 건너뜀(경고)
 - **NRC 인보이스**: 첨부 PDF 본문에 National Response Corporation / OPA 90 Service Invoice가 있으면 리젝 + 리마크 `NRC invoice`. 1단계가 남긴 본문 텍스트 캐시를 재사용(PDF 재추출 없음)
-- **중복 인보이스**: Debit 라인의 인보이스 번호(점·대시·슬래시 등 기호 무시) + 통화 + 금액이 같은 선박의 먼저 만들어진 다른 SOA(Draft 제외, ±24개월)에 있으면 리젝 + `Duplicate invoice: <번호> = <원본 SOA> s<라인>`. 원본은 건드리지 않음. 같은 선박 비용청구(Fund Request)로 이미 지급된 인보이스와 같으면 `… = Fund Request <번호>`(단 라인과 같은 AOR 소속이면 정상 정산으로 제외). 관리비(080101)·통신비(0601*) 제외(`SOA_DUP_EXCLUDE_EXP`로 추가). 같은 선박 안에서만 검색
+- **중복 인보이스**: Debit 라인의 인보이스 번호(점·대시·슬래시 등 기호 무시) + 통화 + 금액이 같은 선박의 먼저 만들어진 다른 SOA(Draft 제외, ±24개월)에 있으면 리젝 + `Duplicate invoice: <번호> = <원본 SOA> s<라인>`. 원본은 건드리지 않음. **비용청구(Fund Request)는 비교하지 않음** — Fund Request는 송금 서류이고 SOA는 그 비용의 기록이라, SOA에 등록된 적 없는 인보이스는 중복이 아님. 관리비(080101)·통신비(0601*) 제외(`SOA_DUP_EXCLUDE_EXP`로 추가). 같은 선박 안에서만
+- **AOR을 OPEX로 상신**: CAT-II가 OPEX인데 첨부 본문에 AOR 표식("Agreed Overrun Expenses")과 같은 선박의 AOR 번호가 있고, 그 번호가 SVMS AOR 원장에 실제로 있으면 리젝 + `AOR filed as OPEX: AOR doc <AOR No> attached - pls change Cat-II to AOR and enter AOR Req No`. 문구만 있고 원장에 없는 번호면 걸지 않음
+- **AOR 인보이스 번호**: AOR 건(CAT-II=AOR 또는 위 항목에 걸린 라인)인데 SOA Invoice No가 AOR 커버페이지의 Ref 번호이거나 공란이면 리젝 + `AOR invoice no: SOA <번호> = AOR cover page Ref / vendor invoice <업체 번호 | no. required>`. 커버 Ref는 AOR 표식이 있는 페이지에서만 읽고, 업체 인보이스 번호는 커버페이지 밖에서 찾음(코드 우선, 못 찾으면 Haiku 보조 — 본문 실재·커버 Ref·AOR 번호 아님을 재확인). `SOA_STAGE2_AORDOC=shadow`면 판정만 출력하고 기입 안 함, `0`이면 끔
 - 1단계가 단 리젝 리마크(`Cost no match …`)가 있으면 덮어쓰지 않고 2단계 사유를 ` | `로 덧붙임. 관리사·사람이 쓴 리마크는 보존
-- 리젝 사유가 여러 개면 리마크에 전부 ` | `로 이어서 남김(NRC → Operational AOR → 관리비 → 환율 순, 240자 넘으면 숫자 유지 축약)
+- 리젝 사유가 여러 개면 리마크에 전부 ` | `로 이어서 남김(NRC → 중복 → AOR을 OPEX로 → AOR 인보이스 번호 → Operational AOR → 관리비 → 환율 순, 240자 넘으면 숫자 유지 축약)
 - AOR·환율 조회 실패가 1건이라도 있으면 아무것도 기입하지 않고 "확인필요"로만 보고합니다. 이미 리젝된 라인·관리사 재상신 라인의 리마크는 덮어쓰지 않습니다.
 ```bash
 python3 -m soa_verify stage2 --vessel ABCD --from 202601 --to 202612 --dept 05          # 미리보기
