@@ -182,6 +182,39 @@ def _ocr_close(a, b):
         return False
     return abs(a - b) <= max(0.02, min(0.10, abs(b) * 0.005))
 
+_FINAL_TOTAL_RE = re.compile(
+    r'\b(total\s+amount\s+due|amount\s+due|total\s+due|grand\s+total|balance\s+due|total\s+payable|amount\s+payable'
+    r'|net\s+amount|invoice\s+total|total\s+invoice\s+amount)\b', re.I)
+_SUBTOTAL_RE = re.compile(r'\bsub\s*-?\s*total\b', re.I)
+
+
+def _final_total_direct(txt, amt):
+    """라인금액이 '최종 청구총액' 표지(Total Amount Due·Grand Total·Net Amount 등) 줄에 있고, 그 줄이 소계 줄이 아님."""
+    if amt is None:
+        return False
+    for line in (txt or "").splitlines():
+        if _FINAL_TOTAL_RE.search(line) and not _SUBTOTAL_RE.search(line) and _direct_amt(line, amt):
+            return True
+    return False
+
+
+def _final_total_beats_subtotal(txt, la, hamt):
+    """override 조건(올마이트): ① la 가 최종총액 줄에 있음 ② 경쟁금액 hamt 는 '소계' 줄에만 있고 최종총액 줄엔 없음
+    ③ hamt < la ④ 본문의 최종총액 줄 금액이 la 하나뿐(복수 인보이스·복수 최종총액이면 기존 review 경로)."""
+    if la is None or hamt is None or not hamt < la or not _final_total_direct(txt, la):
+        return False
+    finals, h_sub, h_final = set(), False, False
+    for line in (txt or "").splitlines():
+        is_final = bool(_FINAL_TOTAL_RE.search(line)) and not _SUBTOTAL_RE.search(line)
+        if is_final:
+            finals.update(round(n, 2) for n in body_nums(line))
+            if _direct_amt(line, hamt):
+                h_final = True
+        if _SUBTOTAL_RE.search(line) and _direct_amt(line, hamt):
+            h_sub = True
+    return h_sub and not h_final and finals and all(abs(x - la) <= 0.02 for x in finals)
+
+
 def _strong_direct_context(txt, amt):
     """라인금액이 단순 파일번호/스탬프가 아니라 금액표 주변에 있는지 보수적으로 확인."""
     if amt is None:
@@ -608,6 +641,11 @@ def resolve(path, vessel, line_amt, line_cur, usd_amt=None, ident=None):
 
     h_competes = (hamt is not None and abs(hamt - la) > 0.02 and h_real) if la is not None else False
     haiku_strong_reject = matches_false and conf >= 0.6 and h_competes
+
+
+
+    if haiku_strong_reject and direct and _final_total_beats_subtotal(body, la, hamt):
+        haiku_strong_reject = False
     gpt_guard_reason = None
     if haiku_strong_reject and direct and strong_direct and _selected_review_is_openai():
         gpt_guard_reason = _gpt_overflag_guard(body, la, hamt, vessel=vessel, ident=ident)
