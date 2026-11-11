@@ -669,7 +669,7 @@ def predel_remark(line):
     return f"{PREDEL_REMARK_PREFIX}: EXP {line.get('EXP_CD')} is pre-delivery account - pls change Cat-II to Pre-delivery"
 
 
-_PREDEL_VOLATILE = ("SOA_OPEX_TP", "COST_TP", "UPST_DI", "UPST_USER_ID")
+_PREDEL_VOLATILE = ("SOA_OPEX_TP", "COST_TP", "UPST_DI", "UPST_USER_ID", "UPST_NM")
 
 
 def predel_ok(before, after):
@@ -681,11 +681,95 @@ def predel_ok(before, after):
     return all(before.get(k) == after.get(k) for k in keys)
 
 
+
+
+
+SUMMARY_MODE = os.environ.get("SOA_STAGE2_SUMMARY", "1")
+SUM_TAG = " | 적요: "
+SUM_MARK = "적요:"
+SUM_MIN = 15
+
+
+def summary_remark(prev, summary, limit=120):
+    """기존 리마크 + ' | 적요: 요약'. 이미 적요 요약 있음/공간 부족/요약 없음 = None."""
+    prev = str(prev or "").strip()
+    summary = re.sub(r"\s+", " ", str(summary or "")).strip(" .;,-")
+    if not summary or SUM_MARK in prev:
+        return None
+    head = (prev + SUM_TAG) if prev else SUM_MARK + " "
+    room = limit - len(head)
+    if room < SUM_MIN:
+        return None
+    if len(summary) > room:
+        cut = summary[:room]
+        summary = (cut.rsplit(" ", 1)[0] if " " in cut[SUM_MIN:] else cut).rstrip(" ,;-")
+    return head + summary
+
+
+import threading as _threading
+_SUM_LOCK = _threading.Lock()
+
+
+def _sum_cache_path():
+    import soa_review as R
+    return os.path.join(getattr(R, "PDFDIR", os.path.dirname(os.path.abspath(__file__))), "_summary_cache.json")
+
+
+_NO_DESC = re.compile(r"not (?:stated|specified|described|itemi[sz]ed)|no (?:service|work|item|line item|description)|"
+                      r"unspecified|unitemi[sz]ed|only amounts|cannot be determined|not identified", re.I)
+
+
+def summarize_texts(texts, exp_nm="", room=90):
+    """첨부 본문 → 영어 한 줄 적요(품목·작업). 같은 본문은 캐시(재호출 0). 실패=None."""
+    import hashlib, json
+    body = "\n".join(t for t in (texts or []) if t).strip()
+    if len(body) < 30:
+        return None
+    key = hashlib.sha256(body[:6000].encode("utf-8", "replace")).hexdigest()
+    path = _sum_cache_path()
+    with _SUM_LOCK:
+        try:
+            cache = json.load(open(path))
+        except (OSError, ValueError):
+            cache = {}
+    if key in cache:
+        v = cache[key]
+        return None if (not v or _NO_DESC.search(v)) else v
+    try:
+        from llm_router import llm_json
+        d = llm_json("Summarize what this marine invoice/document charges for, as ONE short English phrase for an accounting "
+                     f"remark (max {room} characters). Name the actual items/services/work (e.g. 'Fire extinguisher service & "
+                     "CO2 recharge, 3 cyl.'). No amounts, currency, invoice numbers, dates or vessel name. If the document does not describe "
+                     "the items/services, return null (do not describe the document itself). Account hint: "
+                     f"{exp_nm}. Reply JSON only: {{\"summary\": \"...\" | null}}\n\n" + body[:3500], timeout=120)
+        v = d.get("summary") if isinstance(d, dict) and not d.get("_llm_error") else None
+        v = str(v).strip() if v else None
+        if v and _NO_DESC.search(v):
+            v = ""
+    except Exception:
+        return None
+    if v is None:
+        return None
+    with _SUM_LOCK:
+        try:
+            try:
+                cache = json.load(open(path))
+            except (OSError, ValueError):
+                cache = {}
+            cache[key] = v
+            with open(path + ".tmp", "w") as f:
+                json.dump(cache, f)
+            os.replace(path + ".tmp", path)
+        except OSError:
+            pass
+    return v
+
+
 def hdr_same(a, b):
     """헤더 재저장 후 확인: UPST_* 외 헤더 필드 불변."""
     if not a or not b:
         return False
-    keys = (set(a) | set(b)) - {"UPST_DI", "UPST_USER_ID"}
+    keys = (set(a) | set(b)) - {"UPST_DI", "UPST_USER_ID", "UPST_NM", "STATUS_DT"}
     return all(a.get(k) == b.get(k) for k in keys)
 
 
@@ -740,7 +824,7 @@ def run(vsl):
         warns.append(f"관리비 계약표에 '{vname or vsl}' 없음 → C 미검사")
 
     print(f"=== SOA 2차 검증 [{vsl}] {'VERIFY(리젝체크+리마크 실기입)' if VERIFY else 'DRY(0 write)'} ===")
-    print(f"   SL_TP={SL_TP}({DEPT_LABEL[SL_TP]}) · SL_DM {FM_DM}~{TO_DM} · STATUS=S · 항목: A.Operational AOR · B.외화 환율(≥120%) · C.관리비 SMA · D.NRC · E.중복 인보이스 · H.12xxxx→Pre-delivery\n")
+    print(f"   SL_TP={SL_TP}({DEPT_LABEL[SL_TP]}) · SL_DM {FM_DM}~{TO_DM} · STATUS=S · 항목: A.Operational AOR · B.외화 환율(≥120%) · C.관리비 SMA · D.NRC · E.중복 인보이스 · H.12xxxx→Pre-delivery · I.적요요약\n")
     hdr = select("PKG_CO_SLIP_EX", "SP_GET_SOA",
                  {"VSL_CD": vsl, "FM_DM": FM_DM, "TO_DM": TO_DM, "SOA_OW_COMP_ID": "", "VSL_STATUS": "1"})
     rows = [r for r in (hdr.get("P_RS", []) or [])
@@ -890,17 +974,58 @@ def run(vsl):
     elif VERIFY and predel and PREDEL_MODE == "1":
         print(f"    ⏸ 확인필요/기입실패가 있어 Cat-II 변경 {len(predel)}건 보류")
 
+
+    n["sum"] = n["sumfail"] = 0
+    if SUMMARY_MODE == "1" and not n["error"] and not n["wfail"] and not n["pdfail"]:
+        from concurrent.futures import ThreadPoolExecutor
+        for r in sorted(rows, key=lambda x: x.get("SL_DM") or ""):
+            sx = r.get("SX_CD")
+            cur = _soa_now(vsl, sx)
+            if not cur or cur[0].get("STATUS") != "S":
+                continue
+            cand = [l for l in cur[1] if l.get("SOA_TP") == "D" and SUM_MARK not in str(l.get("RMK") or "")
+                    and SUM_MARK not in str(l.get("SUBJ") or "")]
+            if not cand:
+                continue
+
+            def _one(l):
+                rm = str(l.get("RMK") or "").strip()
+                room = 120 - len(rm + SUM_TAG if rm else SUM_MARK + " ")
+                if room < SUM_MIN:
+                    return l, None
+                t = line_texts(sx, l, warns)
+                return l, (summarize_texts(t, l.get("EXP_NM") or "", room) if t else None)
+            with ThreadPoolExecutor(max_workers=4) as ex:
+                got = list(ex.map(_one, cand))
+            upd, exp = {}, {}
+            for l, sm in got:
+                new_r = summary_remark(l.get("RMK"), sm)
+                new_s = summary_remark(l.get("SUBJ"), sm)
+                if new_r:
+                    upd[str(l.get("SX_SEQ"))] = {"RMK": new_r, **({"SUBJ": new_s} if new_s else {})}
+                    exp[str(l.get("SX_SEQ"))] = {"SUBJ": l.get("SUBJ"), "RMK": l.get("RMK")}
+                    print(f"    📝 s{l.get('SX_SEQ'):<4} {new_r}")
+            res.setdefault("summary", {})[sx] = len(upd)
+            if not upd or not VERIFY:
+                continue
+            import svms as _sv
+            ok, msg = _sv.save_line_remarks(sx, upd, exp)
+            if ok:
+                n["sum"] += len(upd); print(f"    ✍ {sx} 적요 요약 {len(upd)}라인 기입 확인")
+            else:
+                n["sumfail"] += 1; print(f"    🚨 {sx} 적요 요약 기입 실패/미확인: {msg} — 이후 중단"); break
+
     print(f"=== 합계: 검사 라인 {n['aor']} | 정상 {n['pass']} | 리젝대상 {n['reject']} "
           f"| 기리젝 {n['already']} | 재상신 {n['resub']} | 확인필요 {n['error']} ===")
     if VERIFY:
-        print(f"    실기입: 리젝체크 {n['written']} · 실패 {n['wfail']} · Cat-II→Pre-delivery {n['predel']} · 실패 {n['pdfail']}")
+        print(f"    실기입: 리젝체크 {n['written']} · 실패 {n['wfail']} · Cat-II→Pre-delivery {n['predel']} · 실패 {n['pdfail']} · 적요요약 {n['sum']} · 실패 {n['sumfail']}")
     else:
         print("    (DRY — 0 write. VERIFY=1로 실기입)")
     for w in warns:
         print(f"    ⚠️ {w}")
     print("    ⚠️ Approval·출금 Slip·리젝 제출·관리사 메일 = 미실행")
-    res.update(errors=n["error"], wfail=n["wfail"] + n["pdfail"], complete=True); _write_result(res)
-    return 1 if (n["error"] or n["wfail"] or n["pdfail"]) else 0
+    res.update(errors=n["error"], wfail=n["wfail"] + n["pdfail"] + n["sumfail"], complete=True); _write_result(res)
+    return 1 if (n["error"] or n["wfail"] or n["pdfail"] or n["sumfail"]) else 0
 
 if __name__ == "__main__":
     if len(sys.argv) < 2 or not re.match(r"^[A-Z]{4}$", sys.argv[1].strip().upper()):

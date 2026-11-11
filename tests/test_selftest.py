@@ -103,6 +103,40 @@ class ScopeGuards(unittest.TestCase):
         with self.assertRaises(PermissionError):
             svms.save("PKG_CO_SLIP_EX", "SP_SET_SOA_D_STATUS", dict(base, RJT_YN="Y"))
 
+    def test_remark_save_guards(self):
+        from unittest import mock
+        hdr = {"SX_CD": "X", "STATUS": "C"}
+        line = {"SX_SEQ": "0001", "SUBJ": "OTHERS", "RMK": "OTHERS", "CFM_YN": "Y"}
+        with mock.patch.object(svms, "select", return_value={"P_RS": [hdr], "P_RS_D": [line]}), \
+                mock.patch.object(svms, "_save_raw") as raw:
+            ok, _ = svms.save_line_remarks("X", {"0001": {"RMK": "a"}})
+            self.assertFalse(ok); raw.assert_not_called()                      # 승인된(C) SOA 거부
+        hdr = dict(hdr, STATUS="S")
+        with mock.patch.object(svms, "select", return_value={"P_RS": [hdr], "P_RS_D": [line]}), \
+                mock.patch.object(svms, "_save_raw") as raw:
+            self.assertFalse(svms.save_line_remarks("X", {"0001": {"CFM_YN": "N"}})[0])   # Remark 외 필드 거부
+            self.assertFalse(svms.save_line_remarks("X", {"0001": {"RMK": "x" * 121}})[0])  # 길이 초과 거부
+            raw.assert_not_called()
+        seen = {}
+        def fake_raw(pkg, sp, prm, cur):
+            seen["status"] = prm.get("STATUS"); seen["pic"] = cur["P_IC"]; return {"data": {}}
+        after = [{"P_RS": [hdr], "P_RS_D": [line]}, {"P_RS": [hdr], "P_RS_D": [dict(line, RMK="OTHERS | 적요: x")]}]
+        with mock.patch.object(svms, "select", side_effect=after), mock.patch.object(svms, "_save_raw", side_effect=fake_raw):
+            ok, msg = svms.save_line_remarks("X", {"0001": {"RMK": "OTHERS | 적요: x"}}, {"0001": {"SUBJ": "OTHERS", "RMK": "OTHERS"}})
+        self.assertTrue(ok, msg); self.assertEqual(seen["status"], "S")
+        self.assertEqual(seen["pic"][0]["CFM_YN"], "Y")                         # 다른 라인 필드는 재조회값 그대로
+
+    def test_remark_save_refuses_if_changed(self):
+        from unittest import mock
+        hdr = {"SX_CD": "X", "STATUS": "S"}
+        line = {"SX_SEQ": "0001", "SUBJ": "EDITED", "RMK": "EDITED"}
+        with mock.patch.object(svms, "select", return_value={"P_RS": [hdr], "P_RS_D": [line]}), \
+                mock.patch.object(svms, "_save_raw") as raw:
+            ok, _ = svms.save_line_remarks("X", {"0001": {"RMK": "OTHERS | 적요: x"}}, {"0001": {"SUBJ": "OTHERS", "RMK": "OTHERS"}})
+            self.assertFalse(ok); raw.assert_not_called()                      # 사이에 사람이 고침 → 저장 안 함
+            self.assertFalse(svms.save_line_remarks("X", {"0001": {"RMK": "a"}})[0])   # expect 없음 → 거부
+            raw.assert_not_called()
+
     def test_select_allowlist(self):
         with self.assertRaises(PermissionError):
             svms.select("PKG_CO_SLIP", "SP_SET_SLIP", {})
@@ -113,7 +147,11 @@ class ScopeGuards(unittest.TestCase):
                 with open(os.path.join(PKG, fn), encoding="utf-8") as fh:
                     src = fh.read()
                 for bad in ("approve_soa", "slip_submit", "send_mail", "SP_SET_SOA_INFO\"", "PKG_CO_SLIP\""):
+                    if bad == "SP_SET_SOA_INFO\"" and fn == "svms.py":
+                        continue   # 11-11 형 승인: svms.save_line_remarks 전용(STATUS=S 고정·Remark만) — 아래 테스트로 가드 검증
                     self.assertNotIn(bad, src, f"{fn} contains {bad}")
+                if fn == "svms.py":
+                    self.assertEqual(src.count("SP_SET_SOA_INFO\""), 1, "header save only inside save_line_remarks")
 
 
 if __name__ == "__main__":
