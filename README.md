@@ -1,10 +1,13 @@
-# soa-verify — SVMS SOA 1단계 검증
+# soa-verify — SVMS SOA 1·2단계 검증
+
+> 최신 업데이트: 2026-11-11 — 2차 검증에 **Pre-delivery Cat-II 점검**, **인보이스 적요 요약(Remark 덧붙임)** 추가
 
 SVMS의 **SOA(Statement of Account) 라인 금액을 첨부 인보이스와 대조**해서, 라인별로 confirm 체크 또는 리젝 체크+리마크를 달아주는 도구입니다. 각자 PC의 Claude Code에서 실행합니다.
 
 - 대상: **`--vessel`로 직접 지정한 선박코드**만 (여러 척은 쉼표로). My Vessel 목록에서 자동으로 고르는 기능은 없습니다.
 - 판정: 코드(텍스트/OCR 금액 대조) + Claude **Haiku 5.5**(본인 `claude` CLI 로그인 사용)
-- 범위: **체크박스·리마크 저장까지만.** SOA 승인, 전표상신, 리젝 제출, 메일 발송 기능은 없습니다(코드 자체가 없음).
+- 범위: **체크박스·리젝 리마크·라인 Remark(적요) 저장까지만.** SOA 승인, 전표상신, 리젝 제출, 메일 발송 기능은 없습니다(코드 자체가 없음).
+- 라인 Remark(적요)는 SVMS의 SOA 저장 요청으로만 바뀌어서, `svms.save_line_remarks` 한 곳에서만 씁니다. SOA 상태가 Submitted(S)일 때만, 상태값은 그대로, 라인은 Remark(SUBJ·RMK)만 바꾸고 저장 뒤 다시 읽어 확인합니다.
 - 판정 엔진은 운영 중인 upstream과 같은 코드입니다(`UPSTREAM` 파일에 동기화 커밋 기록, 내보내기 때 구문(AST) 동일성 검사).
 
 ## 설치
@@ -41,12 +44,19 @@ Claude Code에서는 저장소를 연 뒤 "SOA 1단계 검증 돌려줘"라고 �
 - **중복 인보이스**: Debit 라인의 인보이스 번호(점·대시·슬래시 등 기호 무시) + 통화 + 금액이 같은 선박의 먼저 만들어진 다른 SOA(Draft 제외, ±24개월)에 있으면 리젝 + `Duplicate invoice: <번호> = <원본 SOA> s<라인>`. 원본은 건드리지 않음. **비용청구(Fund Request)는 비교하지 않음** — Fund Request는 송금 서류이고 SOA는 그 비용의 기록이라, SOA에 등록된 적 없는 인보이스는 중복이 아님. 관리비(080101)·통신비(0601*) 제외(`SOA_DUP_EXCLUDE_EXP`로 추가). 같은 선박 안에서만
 - **AOR을 OPEX로 상신**: CAT-II가 OPEX인데 첨부 본문에 AOR 표식("Agreed Overrun Expenses")과 같은 선박의 AOR 번호가 있고, 그 번호가 SVMS AOR 원장에 실제로 있으면 리젝 + `AOR filed as OPEX: AOR doc <AOR No> attached - pls change Cat-II to AOR and enter AOR Req No`. 문구만 있고 원장에 없는 번호면 걸지 않음
 - **AOR 인보이스 번호**: AOR 건(CAT-II=AOR 또는 위 항목에 걸린 라인)인데 SOA Invoice No가 AOR 커버페이지의 Ref 번호이거나 공란이면 리젝 + `AOR invoice no: SOA <번호> = AOR cover page Ref / vendor invoice <업체 번호 | no. required>`. 커버 Ref는 AOR 표식이 있는 페이지에서만 읽고, 업체 인보이스 번호는 커버페이지 밖에서 찾음(코드 우선, 못 찾으면 Haiku 보조 — 본문 실재·커버 Ref·AOR 번호 아님을 재확인). `SOA_STAGE2_AORDOC=shadow`면 판정만 출력하고 기입 안 함, `0`이면 끔
+- **Pre-delivery 계정**: 비용코드 12xxxx(초도 계정)인데 CAT-II가 OPEX/AOR이면 리젝 + `Cat-II should be Pre-delivery: EXP <코드> is pre-delivery account - pls change Cat-II to Pre-delivery` (Cat-II를 직접 바꾸지는 않음)
+- **인보이스 적요 요약**: Debit 라인 첨부를 읽어 무엇에 대한 청구인지 한 줄로 요약해, 관리사가 쓴 Remark는 그대로 두고 뒤에 ` | 적요: …`를 덧붙입니다. 기술명칭·장비/모델명은 영어, 연결부만 한글(예: `FORWARDING COST | 적요: Local control valve 등 선용품 Air freight (Incheon→Dubai), customs clearance 포함`)
+  - 텍스트로 품목을 못 찾은 라인(스캔본 등)만 첨부 앞 2페이지를 이미지로 다시 읽음
+  - 첨부에 품목 설명이 아예 없으면 비워둠 → 직접 열어서 확인
+  - 이미 `적요:`가 있는 라인은 다시 쓰지 않음. 합계 120자·UTF-8 180바이트 이내(SVMS 한도 200바이트)
+  - 같은 첨부는 요약을 캐시해 재호출하지 않음. `SOA_STAGE2_SUMMARY=0`이면 끔, `SOA_STAGE2_SUMMARY_VISION=0`이면 이미지 재판독만 끔
+  - ⚠️ 출금 전표 라인 적요가 SOA Remark를 복사해 가므로, 승인 후 전표 적요에도 그대로 들어갑니다. 저장하면 SOA 헤더의 상태일자·수정자가 본인 계정으로 바뀝니다
 - 1단계가 단 리젝 리마크(`Cost no match …`)가 있으면 덮어쓰지 않고 2단계 사유를 ` | `로 덧붙임. 관리사·사람이 쓴 리마크는 보존
-- 리젝 사유가 여러 개면 리마크에 전부 ` | `로 이어서 남김(NRC → 중복 → AOR을 OPEX로 → AOR 인보이스 번호 → Operational AOR → 관리비 → 환율 순, 240자 넘으면 숫자 유지 축약)
+- 리젝 사유가 여러 개면 리마크에 전부 ` | `로 이어서 남김(NRC → 중복 → AOR을 OPEX로 → AOR 인보이스 번호 → Pre-delivery → Operational AOR → 관리비 → 환율 순, 240자 넘으면 숫자 유지 축약)
 - AOR·환율 조회 실패가 1건이라도 있으면 아무것도 기입하지 않고 "확인필요"로만 보고합니다. 이미 리젝된 라인·관리사 재상신 라인의 리마크는 덮어쓰지 않습니다.
 ```bash
 python3 -m soa_verify stage2 --vessel ABCD --from 202601 --to 202612 --dept 05          # 미리보기
-python3 -m soa_verify stage2 --vessel ABCD --from 202601 --to 202612 --dept 05 --save   # 리젝 체크 + 리마크 저장
+python3 -m soa_verify stage2 --vessel ABCD --from 202601 --to 202612 --dept 05 --save   # 리젝 체크 + 리마크 + 적요 저장
 ```
 
 ## 리마크정리
@@ -88,7 +98,7 @@ app.register_blueprint(create_blueprint(), url_prefix="/soa-verify")   # 반드�
 
 ## 주의
 - 모든 저장은 본인 SVMS 계정 권한으로 이뤄집니다. 저장 전 미리보기로 결과를 확인하세요.
-- Claude CLI 호출은 본인 구독 사용량을 소모합니다(라인당 1회 내외).
+- Claude CLI 호출은 본인 구독 사용량을 소모합니다(1단계 라인당 1회 내외 + 2단계 적요 요약 라인당 1회, 첫 실행만. 이미지 재판독은 SOA당 소수 라인).
 - 엔진 파일은 upstream 동기화 대상입니다. 수정 제안은 이슈로 남겨주세요.
 
 License: MIT
