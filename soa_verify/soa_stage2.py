@@ -92,7 +92,7 @@ FX_REMARK_PREFIX = "FX over-charged"
 AOROPEX_REMARK_PREFIX = "AOR filed as OPEX"
 AORINV_REMARK_PREFIX = "AOR invoice no"
 OWN_PREFIXES = (OPR_REMARK_PREFIX, FX_REMARK_PREFIX, MF_REMARK_PREFIX, NRC_REMARK, "Duplicate invoice",
-                AOROPEX_REMARK_PREFIX, AORINV_REMARK_PREFIX)
+                AOROPEX_REMARK_PREFIX, AORINV_REMARK_PREFIX, "Cat-II should be Pre-delivery")
 
 
 
@@ -189,9 +189,9 @@ def _num(v):
 
 
 REMARK_MAX = 240
-_ORDER = {"D": 0, "E": 1, "F": 2, "G": 3, "A": 4, "C": 5, "B": 6}
+_ORDER = {"D": 0, "E": 1, "F": 2, "G": 3, "H": 4, "A": 5, "C": 6, "B": 7}
 _TAGNAME = {"D": "NRC invoice", "E": "Duplicate invoice", "A": "Operational AOR", "C": "Mgmt fee over SMA", "B": "FX over-charged",
-            "F": AOROPEX_REMARK_PREFIX, "G": AORINV_REMARK_PREFIX}
+            "F": AOROPEX_REMARK_PREFIX, "G": AORINV_REMARK_PREFIX, "H": "Cat-II should be Pre-delivery"}
 
 
 def _short(tag, full):
@@ -644,6 +644,51 @@ def line_texts(sx, l, warns):
         return None
 
 
+
+
+
+
+PREDEL_MODE = os.environ.get("SOA_STAGE2_PREDEL", "1")
+PREDEL_TP = "P"
+
+
+def needs_predel(line):
+    """순수 판정: Debit 라인 EXP_CD 12xxxx 인데 Cat-II 가 O/A 면 True."""
+    return (line.get("SOA_TP") == "D" and str(line.get("EXP_CD") or "").startswith("12")
+            and str(line.get("SOA_OPEX_TP") or "").upper() in ("O", "A"))
+
+
+PREDEL_REMARK_PREFIX = "Cat-II should be Pre-delivery"
+try:
+    from soa_predel_write import predel_line
+except ImportError:
+    predel_line = None
+
+
+def predel_remark(line):
+    return f"{PREDEL_REMARK_PREFIX}: EXP {line.get('EXP_CD')} is pre-delivery account - pls change Cat-II to Pre-delivery"
+
+
+_PREDEL_VOLATILE = ("SOA_OPEX_TP", "COST_TP", "UPST_DI", "UPST_USER_ID")
+
+
+def predel_ok(before, after):
+    """기입 후 확인: 대상 라인은 Cat-II(P)만 바뀌고 나머지 필드 불변."""
+    if not after or str(after.get("SOA_OPEX_TP") or "").upper() != PREDEL_TP \
+            or str(after.get("COST_TP") or "").upper() != PREDEL_TP:
+        return False
+    keys = (set(before) | set(after)) - set(_PREDEL_VOLATILE)
+    return all(before.get(k) == after.get(k) for k in keys)
+
+
+def hdr_same(a, b):
+    """헤더 재저장 후 확인: UPST_* 외 헤더 필드 불변."""
+    if not a or not b:
+        return False
+    keys = (set(a) | set(b)) - {"UPST_DI", "UPST_USER_ID"}
+    return all(a.get(k) == b.get(k) for k in keys)
+
+
 def reject_line(sx, seq, rmk):
     return save("PKG_CO_SLIP_EX", "SP_SET_SOA_D_STATUS",
                 {"SX_CD": sx, "SX_SEQ": seq, "CFM_YN": "N", "RJT_YN": "Y",
@@ -695,7 +740,7 @@ def run(vsl):
         warns.append(f"관리비 계약표에 '{vname or vsl}' 없음 → C 미검사")
 
     print(f"=== SOA 2차 검증 [{vsl}] {'VERIFY(리젝체크+리마크 실기입)' if VERIFY else 'DRY(0 write)'} ===")
-    print(f"   SL_TP={SL_TP}({DEPT_LABEL[SL_TP]}) · SL_DM {FM_DM}~{TO_DM} · STATUS=S · 항목: A.Operational AOR · B.외화 환율(≥120%) · C.관리비 SMA · D.NRC · E.중복 인보이스\n")
+    print(f"   SL_TP={SL_TP}({DEPT_LABEL[SL_TP]}) · SL_DM {FM_DM}~{TO_DM} · STATUS=S · 항목: A.Operational AOR · B.외화 환율(≥120%) · C.관리비 SMA · D.NRC · E.중복 인보이스 · H.12xxxx→Pre-delivery\n")
     hdr = select("PKG_CO_SLIP_EX", "SP_GET_SOA",
                  {"VSL_CD": vsl, "FM_DM": FM_DM, "TO_DM": TO_DM, "SOA_OW_COMP_ID": "", "VSL_STATUS": "1"})
     rows = [r for r in (hdr.get("P_RS", []) or [])
@@ -709,6 +754,7 @@ def run(vsl):
 
     n = {"aor": 0, "pass": 0, "reject": 0, "already": 0, "resub": 0, "error": 0, "written": 0, "wfail": 0}
     todo = []
+    predel = []
     dup_idx = None
 
     for r in sorted(rows, key=lambda x: x.get("SL_DM") or ""):
@@ -739,8 +785,17 @@ def run(vsl):
 
 
             aordoc = None
+            if needs_predel(l) and PREDEL_MODE == "1" and predel_line is None:
+                aordoc_pre = [("H", predel_remark(l))]
+            else:
+                aordoc_pre = None
+            if needs_predel(l) and PREDEL_MODE in ("1", "shadow") and predel_line is not None:
+                predel.append((sx, l.get("SX_SEQ")))
+                res.setdefault("predel", {}).setdefault(sx, []).append(str(l.get("SX_SEQ")))
+                print(f"    🔁 s{l.get('SX_SEQ'):<4} [{l.get('EXP_CD')}] Cat-II {l.get('SOA_OPEX_TP')} → Pre-delivery(P)"
+                      + (" (섀도·미반영)" if PREDEL_MODE == "shadow" else ""))
             if AORDOC_MODE in ("1", "shadow") and str(l.get("SOA_OPEX_TP") or "").upper() in ("A", "O") \
-                    and l.get("SOA_TP") != "A":
+                    and l.get("SOA_TP") != "A" and not (needs_predel(l) and PREDEL_MODE != "0"):
                 texts = line_texts(sx, l, warns)
                 if texts is not None or str(l.get("SOA_OPEX_TP") or "").upper() == "A":
                     try:
@@ -754,6 +809,8 @@ def run(vsl):
                             {"sx": sx, "seq": str(l.get("SX_SEQ")), "remarks": [r for _, r in fg]})
                     elif fg:
                         aordoc = fg
+            if aordoc_pre:
+                aordoc = (aordoc or []) + aordoc_pre
             verdict, aor, note, rmk = judge_line(l, aor_lookup, SL_TP, fx_lookup, mf, nrc, dup, aordoc)
             if verdict == "skip":
                 continue
@@ -811,17 +868,39 @@ def run(vsl):
             else:
                 n["wfail"] += 1; print(f"    🚨 {sx} s{seq} 기입 미확인(재조회 불일치) — 이후 기입 중단"); break
 
+
+    n["predel"] = n["pdfail"] = 0
+    if VERIFY and PREDEL_MODE == "1" and predel and not n["error"] and not n["wfail"]:
+        for sx, seq in predel:
+            now = _soa_now(vsl, sx)
+            cur = next((x for x in (now[1] if now else []) if str(x.get("SX_SEQ")) == str(seq)), None)
+            if not now or now[0].get("STATUS") != "S" or not cur or not needs_predel(cur):
+                print(f"    ↩ {sx} s{seq} 상태 변경됨/이미 수정 — Cat-II 변경 스킵"); continue
+            try:
+                predel_line(now[0], cur)
+            except BaseException as e:
+                print(f"    🚨 {sx} s{seq} Cat-II 변경 예외: {str(e)[:80]} — 이후 중단"); n["pdfail"] += 1; break
+            post = _soa_now(vsl, sx)
+            after = next((x for x in (post[1] if post else []) if str(x.get("SX_SEQ")) == str(seq)), None)
+            if post and post[0].get("STATUS") == "S" and hdr_same(now[0], post[0]) and predel_ok(cur, after) \
+                    and _fp_excl(post[1], seq) == _fp_excl(now[1], seq):
+                n["predel"] += 1; print(f"    ✍ {sx} s{seq} Cat-II → Pre-delivery 변경 확인")
+            else:
+                n["pdfail"] += 1; print(f"    🚨 {sx} s{seq} Cat-II 변경 미확인(재조회 불일치) — 이후 중단"); break
+    elif VERIFY and predel and PREDEL_MODE == "1":
+        print(f"    ⏸ 확인필요/기입실패가 있어 Cat-II 변경 {len(predel)}건 보류")
+
     print(f"=== 합계: 검사 라인 {n['aor']} | 정상 {n['pass']} | 리젝대상 {n['reject']} "
           f"| 기리젝 {n['already']} | 재상신 {n['resub']} | 확인필요 {n['error']} ===")
     if VERIFY:
-        print(f"    실기입: 리젝체크 {n['written']} · 실패 {n['wfail']}")
+        print(f"    실기입: 리젝체크 {n['written']} · 실패 {n['wfail']} · Cat-II→Pre-delivery {n['predel']} · 실패 {n['pdfail']}")
     else:
         print("    (DRY — 0 write. VERIFY=1로 실기입)")
     for w in warns:
         print(f"    ⚠️ {w}")
     print("    ⚠️ Approval·출금 Slip·리젝 제출·관리사 메일 = 미실행")
-    res.update(errors=n["error"], wfail=n["wfail"], complete=True); _write_result(res)
-    return 1 if (n["error"] or n["wfail"]) else 0
+    res.update(errors=n["error"], wfail=n["wfail"] + n["pdfail"], complete=True); _write_result(res)
+    return 1 if (n["error"] or n["wfail"] or n["pdfail"]) else 0
 
 if __name__ == "__main__":
     if len(sys.argv) < 2 or not re.match(r"^[A-Z]{4}$", sys.argv[1].strip().upper()):
