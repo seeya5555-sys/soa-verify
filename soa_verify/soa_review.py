@@ -323,12 +323,7 @@ def verify_aor(sx, seq, vsl, l):
             except: pass
     if aor_cost is not None and any(abs(a - aor_cost) <= TOL for a in amts.values()):
         return "confirm", f"AOR 승인액 일치 {aor_cost}", subj
-    fnnums = []
-    for fl in files:
-        fnnums += fnums(fl.get("FILE_NM", "")) + fnums(fl.get("SAVE_NM", ""))
-    fn_match = any(abs(a - n) <= TOL for a in amts.values() for n in fnnums)
-    if fn_match:
-        return "confirm", f"AOR DN 파일명매칭 (subj={'O' if subj else 'X'})", subj
+
 
     pdfs = dl(sx, seq, files)
     for p in pdfs:

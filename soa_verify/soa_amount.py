@@ -144,7 +144,10 @@ def _money_token_values(token):
             c = t.replace(",", "")
         cands = [c]
     elif "," in t:
-        if re.search(r',\d{1,2}$', t):
+        if re.fullmatch(r'\d{1,3}(?:,\d{3})+,\d{1,2}', t):
+
+            i = t.rfind(","); cands = [t[:i].replace(",", "") + "." + t[i + 1:]]
+        elif re.search(r',\d{1,2}$', t):
             cands = [t.replace(".", "").replace(",", ".")]
         else:
             cands = [t.replace(",", "")]
