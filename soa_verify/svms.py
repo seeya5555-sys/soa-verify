@@ -179,7 +179,8 @@ def purge_pdfs(pdfdir, prefix):
     return n
 
 
-REMARK_MAX = 120   # SVMS 'Check remark max length(200)' — 11-11 실측 120 저장·190 거부 → 안전값 120
+REMARK_MAX = 120   # SVMS 'Check remark max length(200)' — 11-11 실측 ASCII 120 저장·190 거부
+REMARK_MAX_BYTES = 180   # 한글 66자(198B) 저장·67자(201B) ORA-06502 → UTF-8 바이트 기준, 안전값 180
 REMARK_KEYS = ("SUBJ", "RMK")
 _VOLATILE = ("UPST_DI", "UPST_USER_ID", "UPST_NM", "STATUS_DT")   # 저장 시 서버가 갱신(11-11 SAPS 실측)
 
@@ -207,7 +208,7 @@ def save_line_remarks(sx_cd, updates, expect=None):
         if cur is None or not isinstance(u, dict) or set(u) - set(REMARK_KEYS):
             return False, f"bad update s{seq}"
         for k, v in u.items():
-            if not isinstance(v, str) or len(v) > REMARK_MAX:
+            if not isinstance(v, str) or len(v) > REMARK_MAX or len(v.encode("utf-8")) > REMARK_MAX_BYTES:
                 return False, f"s{seq} {k} too long/invalid"
         exp = (expect or {}).get(seq, (expect or {}).get(str(seq)))
         if exp is None or any(str(cur.get(k) or "") != str(exp.get(k) or "") for k in REMARK_KEYS):

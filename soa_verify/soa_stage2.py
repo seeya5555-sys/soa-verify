@@ -688,21 +688,26 @@ SUMMARY_MODE = os.environ.get("SOA_STAGE2_SUMMARY", "1")
 SUM_TAG = " | 적요: "
 SUM_MARK = "적요:"
 SUM_MIN = 15
+SUM_STYLE_VER = "ko1:"
 
 
-def summary_remark(prev, summary, limit=120):
+def _fits(t, limit=120, max_bytes=180):
+    return len(t) <= limit and len(t.encode("utf-8")) <= max_bytes
+
+
+def summary_remark(prev, summary, limit=120, max_bytes=180):
     """기존 리마크 + ' | 적요: 요약'. 이미 적요 요약 있음/공간 부족/요약 없음 = None."""
     prev = str(prev or "").strip()
     summary = re.sub(r"\s+", " ", str(summary or "")).strip(" .;,-")
     if not summary or SUM_MARK in prev:
         return None
     head = (prev + SUM_TAG) if prev else SUM_MARK + " "
-    room = limit - len(head)
-    if room < SUM_MIN:
+    if not _fits(head + "x" * SUM_MIN, limit, max_bytes):
         return None
-    if len(summary) > room:
-        cut = summary[:room]
-        summary = (cut.rsplit(" ", 1)[0] if " " in cut[SUM_MIN:] else cut).rstrip(" ,;-")
+    while summary and not _fits(head + summary, limit, max_bytes):
+        summary = (summary.rsplit(" ", 1)[0] if " " in summary else summary[:-1]).rstrip(" ,;-")
+    if len(summary) < 4:
+        return None
     return head + summary
 
 
@@ -725,7 +730,7 @@ def summarize_texts(texts, exp_nm="", room=90):
     body = "\n".join(t for t in (texts or []) if t).strip()
     if len(body) < 30:
         return None
-    key = hashlib.sha256(body[:6000].encode("utf-8", "replace")).hexdigest()
+    key = SUM_STYLE_VER + hashlib.sha256(body[:6000].encode("utf-8", "replace")).hexdigest()
     path = _sum_cache_path()
     with _SUM_LOCK:
         try:
@@ -737,9 +742,11 @@ def summarize_texts(texts, exp_nm="", room=90):
         return None if (not v or _NO_DESC.search(v)) else v
     try:
         from llm_router import llm_json
-        d = llm_json("Summarize what this marine invoice/document charges for, as ONE short English phrase for an accounting "
-                     f"remark (max {room} characters). Name the actual items/services/work (e.g. 'Fire extinguisher service & "
-                     "CO2 recharge, 3 cyl.'). No amounts, currency, invoice numbers, dates or vessel name. If the document does not describe "
+        d = llm_json("Summarize what this marine invoice/document charges for, as ONE short phrase for an accounting "
+                     f"remark (max {room} characters). Name the actual items/services/work. " + "Write it in the owner's Korean-English mixed style (like a ship superintendent's daily note): keep technical "
+                     "terms, equipment/part names, model numbers and standard marine terms in English (e.g. Air freight, Gas analyzer, "
+                     "MARPOL Oil Record Book, Starlink); write only the connecting/descriptive parts in Korean (e.g. 수리, 교체, 포함, "
+                     "월 사용료, 운송, 통관). Example: 'Air freight 선용품 (Incheon→Dubai), customs clearance 포함'. " "No amounts, currency, invoice numbers, dates or vessel name. If the document does not describe "
                      "the items/services, return null (do not describe the document itself). Account hint: "
                      f"{exp_nm}. Reply JSON only: {{\"summary\": \"...\" | null}}\n\n" + body[:3500], timeout=120)
         if not isinstance(d, dict) or d.get("_llm_error") or "summary" not in d:
@@ -773,7 +780,7 @@ def vision_summary(path, exp_nm="", room=90, maxpages=2):
     import hashlib, json, tempfile, glob, subprocess, shutil
     import soa_amount as SA
     try:
-        key = "v:" + hashlib.sha256(open(path, "rb").read()).hexdigest()
+        key = "v:" + SUM_STYLE_VER + hashlib.sha256(open(path, "rb").read()).hexdigest()
     except OSError:
         return None
     cpath = _sum_cache_path()
@@ -794,8 +801,11 @@ def vision_summary(path, exp_nm="", room=90, maxpages=2):
         pngs = sorted(glob.glob(stem + "*.png"))
         if not pngs:
             return None
-        ask = ("Read the attached invoice page image(s). Summarize what is charged for as ONE short English phrase for an "
-               f"accounting remark (max {room} characters): the actual items/services/work. No amounts, currency, invoice "
+        ask = ("Read the attached invoice page image(s). Summarize what is charged for as ONE short phrase for an "
+               f"accounting remark (max {room} characters): the actual items/services/work. " + "Write it in the owner's Korean-English mixed style (like a ship superintendent's daily note): keep technical "
+                     "terms, equipment/part names, model numbers and standard marine terms in English (e.g. Air freight, Gas analyzer, "
+                     "MARPOL Oil Record Book, Starlink); write only the connecting/descriptive parts in Korean (e.g. 수리, 교체, 포함, "
+                     "월 사용료, 운송, 통관). Example: 'Air freight 선용품 (Incheon→Dubai), customs clearance 포함'. " "No amounts, currency, invoice "
                f"numbers, dates or vessel name. Account hint: {exp_nm}. If no items/services are described, return null. "
                'Reply JSON only: {"summary": "..." | null}')
         model = os.environ.get("SOA_SUMMARY_VISION_MODEL", "").strip() or \
@@ -1076,7 +1086,8 @@ def run(vsl):
 
             def _one(l):
                 rm = str(l.get("RMK") or "").strip()
-                room = 120 - len(rm + SUM_TAG if rm else SUM_MARK + " ")
+                hd = rm + SUM_TAG if rm else SUM_MARK + " "
+                room = min(120 - len(hd), (180 - len(hd.encode("utf-8"))) // 2)
                 if room < SUM_MIN:
                     return l, None
                 t = line_texts(sx, l, warns)
