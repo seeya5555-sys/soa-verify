@@ -96,6 +96,8 @@ app.register_blueprint(create_blueprint(), url_prefix="/soa-verify")   # 반드�
 | Crew(04) | 선주 037=Technical과 동일(첨부 본문 금액 검증) · 그 외 선주=사람 검토 · 선주 001 Crew=제외 |
 
 - 고액(USD 5,000 이상)은 선박명/IMO가 본문에 있어야 confirm.
+- 인보이스 읽기 순서: PDF 글자 → (글자가 거의 없으면) 앞 3쪽 스캔 판독(OCR) → 금액을 못 찾고 쪽수가 더 있으면 전 페이지 OCR(최대 20쪽, `SOA_OCR_MAX_PAGES`). 앞쪽이 글자 문서(결재표 등)여도 금액을 못 찾으면 뒤쪽 스캔 페이지까지 OCR로 다시 봅니다.
+- 서비스·스케줄러(launchd·cron 등)로 돌릴 때는 그 실행 환경에 `PATH`(poppler·tesseract·claude), `USER`, `TMPDIR`가 있어야 합니다. 없으면 OCR·AI 호출이 조용히 빈 결과를 낼 수 있으니 같은 환경에서 `doctor`로 먼저 확인하세요.
 - 리젝 리마크는 금액 불일치 사유일 때만 저장(`Cost no match: …`), 그 외 사유는 보고만.
 - 관리사가 재상신한 리젝 라인(S/M 체크+리마크, 금액 사유)은 금액을 다시 검증합니다.
 
