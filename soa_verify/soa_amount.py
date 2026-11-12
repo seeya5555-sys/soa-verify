@@ -590,6 +590,14 @@ def resolve(path, vessel, line_amt, line_cur, usd_amt=None, ident=None):
                 full = ocr_body(path, maxpages=min(npg, OCR_MAX_PAGES))
                 if full.strip() and _direct_amt(full, la):
                     body = full
+
+
+    if src == "text" and la is not None and not _direct_amt(body, la):
+        npg = _pdf_pages(path)
+        if npg > 1:
+            full = ocr_body(path, maxpages=min(npg, OCR_MAX_PAGES))
+            if full.strip() and _direct_amt(full, la):
+                body = body + "\n" + full; src = "text+ocr"
     if not body.strip():
         return dict(status="scan", reason="본문 추출불가(스캔+OCR실패) — 사람 vision", src=src)
     nums = body_nums(body)

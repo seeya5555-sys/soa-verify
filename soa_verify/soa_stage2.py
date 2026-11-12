@@ -98,7 +98,7 @@ FX_REMARK_PREFIX = "FX over-charged"
 AOROPEX_REMARK_PREFIX = "AOR filed as OPEX"
 AORINV_REMARK_PREFIX = "AOR invoice no"
 OWN_PREFIXES = (OPR_REMARK_PREFIX, FX_REMARK_PREFIX, MF_REMARK_PREFIX, NRC_REMARK, "Duplicate invoice",
-                AOROPEX_REMARK_PREFIX, AORINV_REMARK_PREFIX, "Cat-II should be Pre-delivery")
+                AOROPEX_REMARK_PREFIX, AORINV_REMARK_PREFIX, "Cat-II should be Pre-delivery", "AOR no mismatch", "Quotation attached", "Duplicate in same SOA")
 
 
 
@@ -115,6 +115,51 @@ VENDOR_INV = re.compile(r"\bInvoice[ \t]*(?:#|No\.?|Number|Nr\.?)[ \t]*[:.#]?[ \
 
 def _norm_no(v):
     return re.sub(r"[^A-Z0-9]", "", str(v or "").upper())
+
+
+AORNO_REMARK_PREFIX = "AOR no mismatch"
+QUOTE_REMARK = "Quotation attached: no invoice - pls attach invoice"
+QUOTE_TITLE = re.compile(r"\b(QUOTATION|QUOTE\s*(?:#|NO)|PRO\s*-?\s*FORMA)\b", re.I)
+INVOICE_TITLE = re.compile(r"\b(TAX\s+INVOICE|INVOICE\s*(?:#|NO\.?|NUMBER)?|DEBIT\s+NOTE|CREDIT\s+NOTE|STATEMENT\s+OF\s+ACCOUNT)\b", re.I)
+SAMESOA_REMARK_PREFIX = "Duplicate in same SOA"
+
+
+def _inv_base(inv):
+    """같은 SOA 중복용 번호 기준형: 끝의 구분자+영문 1~2자 접미(-CA, A, /B)를 떼고 기호 제거."""
+    v = str(inv or "").strip().upper()
+    v = re.sub(r"(?:[\s\-_/.]+[A-Z]{1,2}|(?<=\d)[A-Z]{1,2})\s*\.?$", "", v)
+    return re.sub(r"[^A-Z0-9]", "", v)
+
+
+def same_soa_dups(lines, text_fn=None):
+    """같은 SOA 안 중복(11-12 형): {뒤 seq: (앞 seq, inv)}. Debit·제외코드 아님·같은 통화+금액 쌍 중
+    (a) 번호 기준형 같음 또는 (b) 같은 거래처 + 첨부 본문(≥200자) 동일. 앞 라인은 원본으로 보존."""
+    import hashlib
+    cand = [l for l in lines if l.get("SOA_TP") == "D" and l.get("RJT_YN") != "Y" and not _dup_excluded(l.get("EXP_CD"))
+            and l.get("SOA_AMT") not in (None, "") and _amt_key(l.get("SOA_AMT")) != "0"]
+    cand.sort(key=lambda l: str(l.get("SX_SEQ")))
+    out, hcache = {}, {}
+
+    def h(l):
+        k = str(l.get("SX_SEQ"))
+        if k not in hcache:
+            t = "\n".join(x for x in ((text_fn(l) if text_fn else None) or []) if x).strip()
+            hcache[k] = hashlib.sha256(re.sub(r"\s+", " ", t).encode()).hexdigest() if len(t) >= 200 else None
+        return hcache[k]
+    for i, a in enumerate(cand):
+        for b in cand[i + 1:]:
+            if str(b.get("SX_SEQ")) in out:
+                continue
+            if (str(a.get("SOA_CUR_CD") or "").upper(), _amt_key(a.get("SOA_AMT"))) != \
+               (str(b.get("SOA_CUR_CD") or "").upper(), _amt_key(b.get("SOA_AMT"))):
+                continue
+            ba, bb = _inv_base(a.get("INV_NO")), _inv_base(b.get("INV_NO"))
+            same_no = bool(ba) and ba == bb
+            same_doc = (not same_no and str(a.get("SOA_VNDR_CD") or "") == str(b.get("SOA_VNDR_CD") or "")
+                        and h(a) is not None and h(a) == h(b))
+            if same_no or same_doc:
+                out[str(b.get("SX_SEQ"))] = (str(a.get("SX_SEQ")), str(b.get("INV_NO") or "").strip())
+    return out
 
 
 def aor_doc_check(line, texts, aor_lookup, vsl, vendor_inv_llm=None):
@@ -135,6 +180,17 @@ def aor_doc_check(line, texts, aor_lookup, vsl, vendor_inv_llm=None):
                                  f"and enter AOR Req No"))
                 is_aor = True
                 break
+
+    if body.strip() and tp in ("O", "A"):
+        heads = [pg[:600] for pg in re.split(r"\f", body) if pg.strip()]
+        if heads and QUOTE_TITLE.search(heads[0]) and not any(INVOICE_TITLE.search(h) for h in heads):
+            out.append(("K", QUOTE_REMARK))
+
+    ref = str(line.get("REF_NO") or "").strip().upper()
+    if (is_aor or tp == "A") and AOR_CODE_ANY.fullmatch(ref or "-") and body.strip():
+        found = [c for c in dict.fromkeys(AOR_CODE_ANY.findall(body.upper())) if c[:4] == vsl]
+        if found and ref not in found:
+            out.append(("J", f"{AORNO_REMARK_PREFIX}: SOA {ref} / attached {', '.join(found[:2])}"))
     if is_aor:
 
         cover_pages = [pg for pg in re.split(r"\f", body) if AOR_MARK.search(pg)]
@@ -195,9 +251,10 @@ def _num(v):
 
 
 REMARK_MAX = 200
-_ORDER = {"D": 0, "E": 1, "F": 2, "G": 3, "H": 4, "A": 5, "C": 6, "B": 7}
+_ORDER = {"D": 0, "E": 1, "L": 1.5, "F": 2, "J": 2.3, "K": 2.6, "G": 3, "H": 4, "A": 5, "C": 6, "B": 7}
 _TAGNAME = {"D": "NRC invoice", "E": "Duplicate invoice", "A": "Operational AOR", "C": "Mgmt fee over SMA", "B": "FX over-charged",
-            "F": AOROPEX_REMARK_PREFIX, "G": AORINV_REMARK_PREFIX, "H": "Cat-II should be Pre-delivery"}
+            "F": AOROPEX_REMARK_PREFIX, "G": AORINV_REMARK_PREFIX, "H": "Cat-II should be Pre-delivery",
+            "J": "AOR no mismatch", "K": "Quotation attached", "L": "Duplicate in same SOA"}
 
 
 def _short(tag, full):
@@ -701,13 +758,45 @@ def _fits(t, limit=120, max_bytes=180):
     return len(t) <= limit and len(t.encode("utf-8")) <= max_bytes
 
 
-def summary_remark(prev, summary, limit=120, max_bytes=180):
-    """기존 리마크 + ' | 적요: 요약'. 이미 적요 요약 있음/공간 부족/요약 없음 = None."""
+NEW_MARK = "적요(new):"
+NEWV_MARK = "적요(new vendor):"
+
+
+def has_sum(t):
+    t = str(t or "")
+    return SUM_MARK in t or NEW_MARK in t or NEWV_MARK in t
+
+
+def upgrade_mark(text, tag, limit=120, max_bytes=180):
+    """기존 '적요: X' → '적요(new): X' / '적요(new vendor): X'. 이미 new 마크·적요 없음 = None. 한도 넘으면 요약 끝을 줄임."""
+    t = str(text or "")
+    if SUM_MARK not in t or NEW_MARK in t or NEWV_MARK in t:
+        return None
+    mark = NEWV_MARK if tag == "vendor" else NEW_MARK
+    out = t.replace(SUM_MARK, mark, 1)
+    while out and not _fits(out, limit, max_bytes):
+        out = out[:-1].rstrip(" ,;-")
+    return out if len(out) > len(t.split(SUM_MARK, 1)[0]) + len(mark) + 3 else None
+
+
+def existing_summary(text):
+    t = str(text or "")
+    return t.split(SUM_MARK, 1)[1].strip() if SUM_MARK in t else None
+
+
+def summary_remark(prev, summary, limit=120, max_bytes=180, new=False):
+    """new: False | True(적요(new)) | "vendor"(적요(new vendor))."""
+    return _summary_remark(prev, summary, limit, max_bytes, new)
+
+
+def _summary_remark(prev, summary, limit=120, max_bytes=180, new=False):
+    """기존 리마크 + ' | 적요: 요약'(new=True면 ' | 적요(new): 요약'). 이미 적요 요약 있음/공간 부족/요약 없음 = None."""
     prev = str(prev or "").strip()
     summary = re.sub(r"\s+", " ", str(summary or "")).strip(" .;,-")
-    if not summary or SUM_MARK in prev:
+    if not summary or has_sum(prev):
         return None
-    head = (prev + SUM_TAG) if prev else SUM_MARK + " "
+    mark = NEWV_MARK if new == "vendor" else (NEW_MARK if new else SUM_MARK)
+    head = (prev + " | " + mark + " ") if prev else mark + " "
     if not _fits(head + "x" * SUM_MIN, limit, max_bytes):
         return None
     while summary and not _fits(head + summary, limit, max_bytes):
@@ -894,6 +983,105 @@ def _write_result(res):
         print(f"    🚨 결과파일 기록 실패: {e}")
 
 
+
+NOTE_MODE = os.environ.get("SOA_NOTE_MODE", "1")
+NOTE_STATE = {"rej_synced": None}
+NOTE_SKIP_CAT2 = ("A", "P")
+
+
+def D_vendor(l):
+    try:
+        import soa_note_db as D
+        return D.vendor_key(l)
+    except Exception:
+        return None
+
+
+def note_judge(hdr, got):
+    """{seq: classify결과}. 실패·모드off = {} (기존 적요 동작 그대로)."""
+    if NOTE_MODE != "1":
+        return {}
+    try:
+        import soa_note_db as D, soa_note_sync as NS
+        if not D.is_ready():
+            return {}
+        if NOTE_STATE["rej_synced"] is None:
+            NOTE_STATE["rej_synced"] = NS.pull_rejected()
+        c = D.connect(); out = {}
+        for l, sm in got:
+            if str(l.get("SOA_OPEX_TP") or "") in NOTE_SKIP_CAT2:
+                continue
+            if (str(l.get("SX_CD") or ""), str(l.get("SX_SEQ"))) in NOTE_STATE.get("cat2_hold", set()):
+                continue
+            basic = None
+            if not sm and D.is_basic_code(l.get("EXP_CD")):
+                basic = D.basic_note(l)
+            if not sm and not basic and not D.is_vendor_only(l.get("EXP_CD")):
+                continue
+            pool = D.pool_key(l.get("COMP_ID") or hdr.get("COMP_ID"), l.get("SM_COMP_ID") or hdr.get("SM_COMP_ID"))
+            dm = str(l.get("SL_DM") or hdr.get("SL_DM") or "")[:6]
+            if basic:
+                v = D.classify_vendor(c, pool, D.vendor_key(l), dm)
+                if v.get("kind") == "new_vendor":
+                    v = dict(v, kind="new")
+                v["basic"] = basic
+            else:
+                v = D.classify(c, pool, l.get("EXP_CD"), sm, dm, own_vessel=True, vendor=D.vendor_key(l))
+            if v.get("kind") == "reject" and str(l.get("STATUS_RMK2") or "").strip():
+                v = dict(v, kind="human", note="관리사 재상신(코멘트) → 자동 리젝 안 함, 사람 확인")
+            if v.get("kind") == "reject" and not NOTE_STATE["rej_synced"]:
+                v = dict(v, kind="known", reject_candidate=True, note="불인정 목록 동기화 실패 → 자동리젝 skip")
+            v["pool"], v["dm"] = pool, dm
+            out[str(l.get("SX_SEQ"))] = v
+        return out
+    except BaseException as e:
+        print(f"    ⚠️ 적요 (new) 판정 실패(기존 적요로 진행): {str(e)[:80]}")
+        return {}
+
+
+def note_apply(vsl, rejects, pending, n, res):
+    n["note_new"] = len(pending); n["note_rej"] = n["note_rejfail"] = 0
+    try:
+        import soa_note_db as D
+        c = D.connect()
+        for hdr, l, sm in (pending if VERIFY else []):
+            D.add(c, D.pool_key(l.get("COMP_ID"), l.get("SM_COMP_ID")), l.get("EXP_CD"), sm, "pending", vsl=vsl,
+                  sl_dm=str(l.get("SL_DM") or "")[:6], src_sx=l.get("SX_CD"), src_seq=str(l.get("SX_SEQ")))
+    except Exception as e:
+        print(f"    ⚠️ (new) 대기 기록 실패: {str(e)[:80]}")
+    res["note"] = {"new": [(l.get("SX_CD"), str(l.get("SX_SEQ")), sm) for _, l, sm in pending], "reject": []}
+    for sx, seq, v, l in rejects:
+        rmk = ("Not accepted cost type: " + str((v.get("ref") or {}).get("summary") or ""))[:REMARK_MAX]
+        res["note"]["reject"].append((sx, seq, rmk))
+        if not VERIFY:
+            print(f"    🧪(DRY) {sx} s{seq} 불인정 매칭 리젝 예정: {rmk}"); continue
+        now = _soa_now(vsl, sx)
+        pre = next((x for x in (now[1] if now else []) if str(x.get("SX_SEQ")) == seq), None)
+        if not now or now[0].get("STATUS") != "S" or not pre or pre.get("RJT_YN") == "Y":
+            print(f"    ↩ {sx} s{seq} 상태 변경 — 불인정 리젝 스킵"); continue
+        try:
+            reject_line(sx, seq, rmk)
+        except BaseException as e:
+            n["note_rejfail"] += 1; print(f"    🚨 {sx} s{seq} 불인정 리젝 예외: {str(e)[:80]}"); break
+        post = _soa_now(vsl, sx)
+        after = next((x for x in (post[1] if post else []) if str(x.get("SX_SEQ")) == seq), None)
+        if after and after.get("RJT_YN") == "Y" and (after.get("RJT_RMK") or "") == rmk:
+            if sx in res.get("checked", []):
+                res.setdefault("findings", {}).setdefault(sx, []).append(seq)
+            n["note_rej"] += 1; print(f"    ⛔ {sx} s{seq} 불인정 적요 매칭 → 리젝 기입 확인 (유사도 {v.get('sim', 0):.2f})")
+        else:
+            n["note_rejfail"] += 1; print(f"    🚨 {sx} s{seq} 불인정 리젝 미확인 — 중단"); break
+    n["wfail"] += n["note_rejfail"]
+    print(f"    🆕 적요(new) {n['note_new']}건 · ⛔ 불인정 자동리젝 {n['note_rej']}건 · 실패 {n['note_rejfail']}")
+    if NOTE_MODE == "1" and VERIFY:
+        try:
+            import soa_note_sync as NS
+            pr = NS.promote(); ok = NS.push_pending()
+            print(f"    🔄 적요 DB 동기화: 인정 승격 {pr['accepted']} · 제외 {pr['dropped']} · TRMT 대기목록 push {'OK' if ok else '실패'}")
+        except BaseException as e:
+            print(f"    ⚠️ 적요 DB 동기화 실패: {str(e)[:80]}")
+
+
 def run(vsl):
     if SL_TP not in DEPT_LABEL:
         print(f"🚨 SL_TP={SL_TP} 불가(04/05만)"); return 2
@@ -926,7 +1114,7 @@ def run(vsl):
         warns.append(f"관리비 계약표에 '{vname or vsl}' 없음 → C 미검사")
 
     print(f"=== SOA 2차 검증 [{vsl}] {'VERIFY(리젝체크+리마크 실기입)' if VERIFY else 'DRY(0 write)'} ===")
-    print(f"   SL_TP={SL_TP}({DEPT_LABEL[SL_TP]}) · SL_DM {FM_DM}~{TO_DM} · STATUS=S · 항목: A.Operational AOR · B.외화 환율(≥120%) · C.관리비 SMA · D.NRC · E.중복 인보이스 · H.12xxxx→Pre-delivery · I.적요요약\n")
+    print(f"   SL_TP={SL_TP}({DEPT_LABEL[SL_TP]}) · SL_DM {FM_DM}~{TO_DM} · STATUS=S · 항목: A.Operational AOR · B.외화 환율(≥120%) · C.관리비 SMA · D.NRC · E.중복 인보이스 · L.같은 SOA 중복 · J.첨부 AOR 번호 · K.견적서 · H.12xxxx→Pre-delivery · I.적요요약\n")
     hdr = select("PKG_CO_SLIP_EX", "SP_GET_SOA",
                  {"VSL_CD": vsl, "FM_DM": FM_DM, "TO_DM": TO_DM, "SOA_OW_COMP_ID": "", "VSL_STATUS": "1"})
     rows = [r for r in (hdr.get("P_RS", []) or [])
@@ -967,6 +1155,10 @@ def run(vsl):
                 dup_idx = build_dup_index(vsl, dms[0], dms[-1])
             except BaseException as e:
                 dup_idx = {}; warns.append(f"중복 인보이스 SOA 이력 조회 실패 → E(SOA) 미검사: {str(e)[:40]}")
+        try:
+            ssd = same_soa_dups(lines, lambda _l: line_texts(sx, _l, warns))
+        except BaseException as e:
+            ssd = {}; warns.append(f"{sx} 같은 SOA 중복 검사 예외 → L 미검사: {str(e)[:40]}")
         for l in lines:
             nrc = nrc_scan(sx, l, warns) if NRC_SCAN else None
             dup = find_dup(dup_idx, sx, l, str(r.get("SL_DM") or "")) if dup_idx else None
@@ -999,6 +1191,9 @@ def run(vsl):
                         aordoc = fg
             if aordoc_pre:
                 aordoc = (aordoc or []) + aordoc_pre
+            if str(l.get("SX_SEQ")) in ssd:
+                _a, _inv = ssd[str(l.get("SX_SEQ"))]
+                aordoc = (aordoc or []) + [("L", f"{SAMESOA_REMARK_PREFIX}: {_inv} = s{_a}")]
             verdict, aor, note, rmk = judge_line(l, aor_lookup, SL_TP, fx_lookup, mf, nrc, dup, aordoc)
             if verdict == "skip":
                 continue
@@ -1017,6 +1212,11 @@ def run(vsl):
                         ffp = "ERR"
                 todo.append((sx, l.get("SX_SEQ"), rmk, soa_fp, ffp, l))
         res["checked"].append(sx)
+
+
+    NOTE_STATE["cat2_hold"] = ({(str(t[0]), str(t[1])) for t in todo}
+                               | {(str(a), str(b)) for a, b in predel}
+                               | {(str(x.get("sx")), str(x.get("seq"))) for x in res.get("aordoc_shadow", [])})
     print()
 
     if VERIFY and n["error"]:
@@ -1080,6 +1280,7 @@ def run(vsl):
 
 
     n["sum"] = n["sumfail"] = 0
+    note_rejects, note_pending, note_newvendor, note_human, note_hold = [], [], [], [], []
     if SUMMARY_MODE == "1" and not n["error"] and not n["wfail"] and not n["pdfail"]:
         from concurrent.futures import ThreadPoolExecutor
         for r in sorted(rows, key=lambda x: x.get("SL_DM") or ""):
@@ -1087,14 +1288,20 @@ def run(vsl):
             cur = _soa_now(vsl, sx)
             if not cur or cur[0].get("STATUS") != "S":
                 continue
-            cand = [l for l in cur[1] if l.get("SOA_TP") == "D" and SUM_MARK not in str(l.get("RMK") or "")
-                    and SUM_MARK not in str(l.get("SUBJ") or "")]
-            if not cand:
+            cand = [l for l in cur[1] if l.get("SOA_TP") == "D" and not has_sum(l.get("RMK"))
+                    and not has_sum(l.get("SUBJ")) and l.get("RJT_YN") != "Y"]
+
+            rejudge = [l for l in cur[1] if l.get("SOA_TP") == "D" and l.get("RJT_YN") != "Y"
+                       and existing_summary(l.get("RMK")) and NEW_MARK not in str(l.get("RMK")) and NEWV_MARK not in str(l.get("RMK"))]
+
+            note_hold.extend((sx, str(l.get("SX_SEQ"))) for l in cur[1]
+                             if l.get("RJT_YN") != "Y" and NEW_MARK in str(l.get("RMK") or ""))
+            if not cand and not rejudge:
                 continue
 
             def _one(l):
                 rm = str(l.get("RMK") or "").strip()
-                hd = rm + SUM_TAG if rm else SUM_MARK + " "
+                hd = rm + " | " + NEWV_MARK + " " if rm else NEWV_MARK + " "
                 room = min(120 - len(hd), (180 - len(hd.encode("utf-8"))) // 2)
                 if room < SUM_MIN:
                     return l, None
@@ -1109,9 +1316,46 @@ def run(vsl):
             with ThreadPoolExecutor(max_workers=4) as ex:
                 got = list(ex.map(_one, cand))
             upd, exp = {}, {}
+            got_re = [(l, existing_summary(l.get("RMK"))) for l in rejudge]
+            verdict = note_judge(cur[0], got + got_re)
+            for l, sm in got_re:
+                v = verdict.get(str(l.get("SX_SEQ"))) or {}
+                if v.get("kind") == "reject":
+                    note_rejects.append((sx, str(l.get("SX_SEQ")), v, l)); continue
+                if v.get("kind") == "human":
+                    note_human.append((sx, str(l.get("SX_SEQ")))); continue
+                tag = "vendor" if v.get("kind") == "new_vendor" else (True if v.get("kind") == "new" else None)
+                if not tag:
+                    continue
+                new_r, new_s = upgrade_mark(l.get("RMK"), tag), upgrade_mark(l.get("SUBJ"), tag)
+                if new_r:
+                    upd[str(l.get("SX_SEQ"))] = {"RMK": new_r, **({"SUBJ": new_s} if new_s else {})}
+                    exp[str(l.get("SX_SEQ"))] = {"SUBJ": l.get("SUBJ"), "RMK": l.get("RMK")}
+                    print(f"    🔁 s{l.get('SX_SEQ'):<4} 재판정 → {new_r}")
+                    if tag is True:
+                        note_pending.append((cur[0], l, sm))
+                    else:
+                        note_newvendor.append((l.get("SX_CD") or sx, str(l.get("SX_SEQ")), D_vendor(l)))
             for l, sm in got:
-                new_r = summary_remark(l.get("RMK"), sm)
-                new_s = summary_remark(l.get("SUBJ"), sm)
+                v = verdict.get(str(l.get("SX_SEQ"))) or {}
+                if v.get("kind") == "reject":
+                    note_rejects.append((sx, str(l.get("SX_SEQ")), v, l)); continue
+                if v.get("kind") == "human":
+                    note_human.append((sx, str(l.get("SX_SEQ"))))
+                isnew = v.get("kind") == "new"
+                if not sm and v.get("basic"):
+                    if not isnew:
+                        continue
+                    sm = v["basic"]
+                tag = "vendor" if v.get("kind") == "new_vendor" else isnew
+                if tag == "vendor" and not sm:
+                    sm = str(l.get("SOA_VNDR_NM") or "").strip() or None
+                new_r = summary_remark(l.get("RMK"), sm, new=tag)
+                new_s = summary_remark(l.get("SUBJ"), sm, new=tag)
+                if tag == "vendor" and new_r:
+                    note_newvendor.append((l.get("SX_CD") or sx, str(l.get("SX_SEQ")), D_vendor(l)))
+                if isnew and new_r:
+                    note_pending.append((cur[0], l, sm))
                 if new_r:
                     upd[str(l.get("SX_SEQ"))] = {"RMK": new_r, **({"SUBJ": new_s} if new_s else {})}
                     exp[str(l.get("SX_SEQ"))] = {"SUBJ": l.get("SUBJ"), "RMK": l.get("RMK")}
@@ -1126,6 +1370,21 @@ def run(vsl):
             else:
                 n["sumfail"] += 1; print(f"    🚨 {sx} 적요 요약 기입 실패/미확인: {msg} — 이후 중단"); break
 
+    note_apply(vsl, note_rejects, note_pending, n, res)
+    n["note_newvendor"] = len(note_newvendor); res.setdefault("note", {})["new_vendor"] = note_newvendor
+    res["note"]["human"] = note_human
+    note_hold.extend((str(l.get("SX_CD")), str(l.get("SX_SEQ"))) for _, l, _ in note_pending if VERIFY)
+    res["note"]["hold_new"] = sorted(set(note_hold))
+    for _sx, _seq in sorted(set(note_hold)) + note_human:
+        if _sx in res.get("checked", []):
+            res.setdefault("findings", {}).setdefault(_sx, []).append(_seq)
+            res.setdefault("note_findings", {}).setdefault(_sx, []).append(_seq)
+    if note_hold:
+        print(f"    ⏸ 적요(new) {len(set(note_hold))}라인 → 2차 지적(자동승인 보류, 형 확인 후 SVMS에서 승인)")
+    if note_human:
+        print(f"    🙋 관리사 재상신 라인 불인정 매칭 {len(note_human)}건 → 자동 리젝 안 함, 형 확인")
+    if note_newvendor:
+        print(f"    🏷 신규 거래처(02~05) {len(note_newvendor)}건 표시")
     print(f"=== 합계: 검사 라인 {n['aor']} | 정상 {n['pass']} | 리젝대상 {n['reject']} "
           f"| 기리젝 {n['already']} | 재상신 {n['resub']} | 확인필요 {n['error']} ===")
     if VERIFY:
