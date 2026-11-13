@@ -986,7 +986,7 @@ def _write_result(res):
 
 NOTE_MODE = os.environ.get("SOA_NOTE_MODE", "1")
 NOTE_STATE = {"rej_synced": None}
-NOTE_SKIP_CAT2 = ("A", "P")
+NOTE_SKIP_CAT2 = ("A",)
 
 
 def D_vendor(l):
@@ -1214,8 +1214,8 @@ def run(vsl):
         res["checked"].append(sx)
 
 
+
     NOTE_STATE["cat2_hold"] = ({(str(t[0]), str(t[1])) for t in todo}
-                               | {(str(a), str(b)) for a, b in predel}
                                | {(str(x.get("sx")), str(x.get("seq"))) for x in res.get("aordoc_shadow", [])})
     print()
 
